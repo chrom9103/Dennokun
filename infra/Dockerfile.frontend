@@ -1,0 +1,23 @@
+FROM node:24-alpine
+
+WORKDIR /app
+
+# 非root実行を前提に、作業ディレクトリをnodeユーザーへ付与
+RUN chown -R node:node /app
+USER node
+
+# パッケージインストールをキャッシュ
+# frontend 配下の package*.json をコピー
+COPY --chown=node:node frontend/package*.json ./
+RUN npm ci --silent --prefer-offline
+
+# アプリ本体をコピー
+# frontend 配下の全ファイルを作業ディレクトリへコピー
+COPY --chown=node:node frontend/. .
+
+RUN npm run build
+
+EXPOSE 3001
+
+CMD ["npm", "run", "start", "--", "--hostname", "0.0.0.0", "--port", "3001"]
+
