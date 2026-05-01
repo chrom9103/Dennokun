@@ -1,0 +1,44 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: denno
+      POSTGRES_PASSWORD: dennopass
+      POSTGRES_DB: dennodb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - denno_net
+
+  backend:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.backend
+    environment:
+      DATABASE_URL: postgres://denno:dennopass@postgres:5432/dennodb
+    depends_on:
+      - postgres
+    ports:
+      - "8001:8001"
+    networks:
+      - denno_net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.frontend
+    ports:
+      - "3001:3001"
+    depends_on:
+      - backend
+    networks:
+      - denno_net
+
+volumes:
+  postgres_data:
+
+networks:
+  denno_net:
+    driver: bridge
