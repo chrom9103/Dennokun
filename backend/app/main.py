@@ -1,7 +1,29 @@
 import os
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.routers import auth
+from app.core.init_db import seed_database
 
 app = FastAPI(title="Dennokun Backend")
+
+# Add CORS middleware for development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3001", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(auth.router)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on startup."""
+    await seed_database()
 
 
 @app.get("/")

@@ -15,8 +15,8 @@ services:
     build:
       context: .
       dockerfile: infra/Dockerfile.backend
-    environment:
-      DATABASE_URL: postgres://denno:dennopass@postgres:5432/dennodb
+    env_file:
+      - backend/.env
     depends_on:
       - postgres
     ports:
@@ -28,6 +28,10 @@ services:
     build:
       context: .
       dockerfile: infra/Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8001}
+    env_file:
+      - frontend/.env
     ports:
       - "3001:3001"
     depends_on:
