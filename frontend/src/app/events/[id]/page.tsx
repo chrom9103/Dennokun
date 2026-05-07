@@ -93,7 +93,7 @@ export default function EventDetail() {
           <strong>Flash News URL:</strong> {event.flash_news_url || "-"}
         </div>
         <div>
-          <strong>Created:</strong> {new Date(event.created_at).toLocaleDateString("en-US")}
+          <strong>Created:</strong> {event.created_at ? new Date(event.created_at).toLocaleDateString("en-US") : "-"}
         </div>
       </div>
 
