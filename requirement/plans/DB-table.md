@@ -103,7 +103,8 @@
 - event_id: FK -> `events.id` (必須)
 - name: string (必須)
 - name_aliases: text/array (nullable)
-- time_display: string (例: "10:00-10:30")
+- start_time: string (例: "10:00")
+- end_time: string (例: "10:30")
 - order_number: integer
 - is_pre_round: boolean (予選フラグ)
 - created_at, updated_at, deleted_at
