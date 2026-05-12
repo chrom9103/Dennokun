@@ -1,0 +1,62 @@
+name: Sync main into submains
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [ctrl, algo, infra]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch all refs
+        run: git fetch origin +refs/heads/*:refs/remotes/origin/*
+
+      - name: Create update branch and merge main
+        id: update
+        run: |
+          TARGET=${{ matrix.target }}
+          UPDATE_BRANCH=update/main-into-${TARGET}-$(date +%s)
+          git checkout -B $UPDATE_BRANCH origin/${TARGET}
+          MERGE_STATUS=merged
+          if git merge --no-edit origin/main; then
+            MERGE_STATUS=merged
+          else
+            git merge --abort || true
+            git commit --allow-empty -m "chore: merge main into ${TARGET} — conflict requires manual resolution"
+            MERGE_STATUS=conflict
+          fi
+          git push origin $UPDATE_BRANCH
+          echo "branch=$UPDATE_BRANCH" >> $GITHUB_OUTPUT
+          echo "merge_status=$MERGE_STATUS" >> $GITHUB_OUTPUT
+
+      - name: Create PR to target
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          base: ${{ matrix.target }}
+          head: ${{ steps.update.outputs.branch }}
+          title: "chore: sync main → ${{ matrix.target }}"
+          body: |
+            自動生成: main の最新を取り込みます
+
+            Merge result: ${{ steps.update.outputs.merge_status }}
+
+            - If status is `conflict`, please resolve merge conflicts on this PR.
+          labels: automated,sync
