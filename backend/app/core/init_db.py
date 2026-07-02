@@ -15,6 +15,49 @@ logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
 
+async def ensure_schema_compatibility(conn: asyncpg.Connection) -> None:
+    """Apply lightweight compatibility migrations for existing databases."""
+    logger.info("Checking database schema compatibility...")
+
+    # Some existing environments still have `time_display` but not
+    # `start_time`/`end_time`. Current API expects start/end columns.
+    await conn.execute(
+        "ALTER TABLE event_timetable_segments ADD COLUMN IF NOT EXISTS start_time TEXT"
+    )
+    await conn.execute(
+        "ALTER TABLE event_timetable_segments ADD COLUMN IF NOT EXISTS end_time TEXT"
+    )
+
+    # Compatibility for older databases that do not yet have rebuttal columns
+    # in event_matches. The match detail API expects these columns to exist.
+    await conn.execute(
+        "ALTER TABLE event_matches ADD COLUMN IF NOT EXISTS aff_second_rebuttal_comm INTEGER"
+    )
+    await conn.execute(
+        "ALTER TABLE event_matches ADD COLUMN IF NOT EXISTS neg_second_rebuttal_comm INTEGER"
+    )
+
+    # Backfill start_time from legacy column when available.
+    await conn.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'event_timetable_segments'
+                  AND column_name = 'time_display'
+            ) THEN
+                UPDATE event_timetable_segments
+                SET start_time = COALESCE(start_time, time_display)
+                WHERE time_display IS NOT NULL;
+            END IF;
+        END $$;
+        """
+    )
+
+
 async def seed_database():
     """Seed initial users from environment variables."""
     logger.info("Starting database seeding...")
@@ -28,6 +71,8 @@ async def seed_database():
             logger.info(f"Connecting to database (attempt {attempt + 1}/{max_retries})...")
             conn = await asyncpg.connect(DATABASE_URL)
             logger.info("Connected to database successfully")
+
+            await ensure_schema_compatibility(conn)
             
             # Get seed credentials from environment
             username = os.getenv("SEED_USERNAME")
