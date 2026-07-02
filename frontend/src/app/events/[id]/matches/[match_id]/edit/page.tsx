@@ -28,13 +28,29 @@ function NumInput({
   value, onChange, className = "",
 }: { value: number; onChange: (v: number) => void; className?: string }) {
   return (
-    <input
-      type="number"
-      value={value}
-      onChange={(e) => onChange(Number(e.target.value) || 0)}
-      min={0}
-      className={`px-2 py-1.5 rounded border border-border text-sm text-center focus:ring-2 focus:ring-primary focus:outline-none bg-white w-16 ${className}`}
-    />
+    <div className="inline-flex items-center gap-1 shadow-sm rounded-lg border border-border p-0.5 bg-secondary/30 select-none">
+      <button
+        type="button"
+        onClick={() => onChange(Math.max(0, value - 1))}
+        className="w-8 h-8 rounded-md bg-white hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-sm text-foreground transition-all shadow-sm border border-border/60"
+      >
+        -
+      </button>
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
+        min={0}
+        className={`bg-transparent text-sm font-semibold text-center focus:outline-none w-10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${className}`}
+      />
+      <button
+        type="button"
+        onClick={() => onChange(value + 1)}
+        className="w-8 h-8 rounded-md bg-white hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-sm text-foreground transition-all shadow-sm border border-border/60"
+      >
+        +
+      </button>
+    </div>
   );
 }
 
@@ -283,30 +299,34 @@ export default function MatchEditPage() {
                         <tr key={key} className="border-b border-border/50 last:border-0">
                           <td className="py-2 text-muted-foreground">{label}</td>
                           <td className="py-2 text-center">
-                            {key === "manner" ? (
-                              <NumInput
-                                value={vd.aff_manner ?? 0}
-                                onChange={(v) => updateVote(idx, "aff_manner", v)}
-                              />
-                            ) : (
-                              <NumInput
-                                value={vd[`aff_${key}` as keyof VotingDetail] as number}
-                                onChange={(v) => updateVote(idx, `aff_${key}` as keyof VotingDetail, v)}
-                              />
-                            )}
+                            <div className="flex justify-center">
+                              {key === "manner" ? (
+                                <NumInput
+                                  value={vd.aff_manner ?? 0}
+                                  onChange={(v) => updateVote(idx, "aff_manner", v)}
+                                />
+                              ) : (
+                                <NumInput
+                                  value={vd[`aff_${key}` as keyof VotingDetail] as number}
+                                  onChange={(v) => updateVote(idx, `aff_${key}` as keyof VotingDetail, v)}
+                                />
+                              )}
+                            </div>
                           </td>
                           <td className="py-2 text-center">
-                            {key === "manner" ? (
-                              <NumInput
-                                value={vd.neg_manner ?? 0}
-                                onChange={(v) => updateVote(idx, "neg_manner", v)}
-                              />
-                            ) : (
-                              <NumInput
-                                value={vd[`neg_${key}` as keyof VotingDetail] as number}
-                                onChange={(v) => updateVote(idx, `neg_${key}` as keyof VotingDetail, v)}
-                              />
-                            )}
+                            <div className="flex justify-center">
+                              {key === "manner" ? (
+                                <NumInput
+                                  value={vd.neg_manner ?? 0}
+                                  onChange={(v) => updateVote(idx, "neg_manner", v)}
+                                />
+                              ) : (
+                                <NumInput
+                                  value={vd[`neg_${key}` as keyof VotingDetail] as number}
+                                  onChange={(v) => updateVote(idx, `neg_${key}` as keyof VotingDetail, v)}
+                                />
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
