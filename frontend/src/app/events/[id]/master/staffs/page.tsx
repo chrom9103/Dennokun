@@ -84,7 +84,10 @@ export default function StaffsPage() {
 
   function openCreate() {
     setEditTarget(null);
-    setForm(emptyForm());
+    setForm({
+      ...emptyForm(),
+      present_segment_ids: segments.map((s) => s.id),
+    });
     setFormError(null);
     setIsModalOpen(true);
   }
