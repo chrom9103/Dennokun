@@ -309,31 +309,37 @@ export default function ControlPage() {
         </div>
       )}
 
-      {/* Generation layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Match Generation Card */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-primary/10"><Icon name="sports" size={20} className="text-primary" /></div>
-              <div>
-                <h3 className="font-semibold">試合の組み合わせ生成</h3>
-                <p className="text-xs text-muted-foreground">チームや時間枠情報から対戦ペアと会場スロットを自動生成します</p>
-              </div>
+      {/* Integrated Parameter Table Card */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <div className="p-2 rounded-lg bg-primary/10"><Icon name="settings" size={20} className="text-primary" /></div>
+            <div>
+              <h3 className="font-semibold text-base text-foreground">時間枠別パラメータ設定</h3>
+              <p className="text-xs text-muted-foreground">各時間枠における並行試合数と1試合あたりの審判数を設定します</p>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Parallel matches per segment input list */}
-            <div className="space-y-3">
-              <label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider block">各枠の並行試合数設定</label>
-              <div className="border border-border rounded-xl p-3.5 space-y-3 bg-secondary/10">
-                {segments.map((seg) => (
-                  <div key={seg.id} className="flex items-center justify-between py-1 border-b border-border/40 last:border-0 last:pb-0">
-                    <div>
-                      <p className="text-sm font-medium">{seg.name}</p>
-                      {seg.start_time && <p className="text-xs text-muted-foreground">{seg.start_time}開始</p>}
-                    </div>
-                    <div className="flex items-center gap-1 bg-white border border-border rounded-lg p-0.5 shadow-sm">
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table className="border-none rounded-none">
+            <TableHeader>
+              <TableRow hover={false}>
+                <TableHead>時間枠</TableHead>
+                <TableHead align="center" className="w-1/3 text-center">各枠の並行試合数設定</TableHead>
+                <TableHead align="center" className="w-1/3 text-center">各枠の1試合あたりジャッジ数設定</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {segments.map((seg) => (
+                <TableRow key={seg.id}>
+                  <TableCell className="font-semibold text-foreground py-3">
+                    <p className="text-sm">{seg.name}</p>
+                    {seg.start_time && <p className="text-xs text-muted-foreground font-normal">{seg.start_time}開始</p>}
+                  </TableCell>
+                  
+                  {/* Parallel Matches Column */}
+                  <TableCell align="center" className="py-3">
+                    <div className="inline-flex items-center gap-1 bg-white border border-border rounded-lg p-0.5 shadow-sm">
                       <button
                         type="button"
                         onClick={() => setParallelMatches((prev) => ({ ...prev, [seg.id]: Math.max(0, (prev[seg.id] || 0) - 1) }))}
@@ -360,77 +366,11 @@ export default function ControlPage() {
                         +
                       </button>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Options */}
-            <div className="space-y-2 border border-border rounded-lg p-3">
-              <label className="flex items-start gap-3 cursor-pointer group hover:bg-muted/30 p-1.5 rounded-lg">
-                <input type="checkbox" className="mt-0.5 w-4 h-4 accent-primary rounded"
-                  checked={genForm.overwrite} onChange={(e) => setGenForm((f) => ({ ...f, overwrite: e.target.checked }))} />
-                <div>
-                  <p className="text-sm font-medium text-destructive">既存試合を削除して再生成</p>
-                  <p className="text-xs text-muted-foreground">現在の試合をすべて削除してから生成します</p>
-                </div>
-              </label>
-            </div>
-
-            {/* Match Generation chips */}
-            <div className="flex flex-wrap gap-2">
-              {[
-                { label: `${teams.length}チーム`, icon: "groups", ok: teams.length > 1 },
-                { label: `${segments.length}時間枠`, icon: "schedule", ok: segments.length > 0 },
-                { label: `${rooms.length}会場`, icon: "meeting_room", ok: rooms.length > 0 },
-              ].map(({ label, icon, ok }) => (
-                <span key={label} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${ok ? "border-green-200 bg-green-50 text-green-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
-                  <Icon name={ok ? "check_circle" : "warning"} size={13} />
-                  {label}
-                </span>
-              ))}
-            </div>
-
-            <Button
-              className="w-full"
-              onClick={handleGenerate}
-              loading={generating}
-              disabled={teams.length < 2}
-            >
-              <Icon name="auto_awesome" size={18} />
-              <span className="ml-2">{generating ? "生成中..." : "試合の組み合わせを生成"}</span>
-            </Button>
-            {teams.length < 2 && (
-              <p className="text-xs text-center text-muted-foreground">
-                チームを2チーム以上登録すると生成できます
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Judge Assignment Card */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-amber-500/10"><Icon name="gavel" size={20} className="text-amber-600" /></div>
-              <div>
-                <h3 className="font-semibold">審判（ジャッジ）の自動割当</h3>
-                <p className="text-xs text-muted-foreground">登録済みの試合に対して、利害関係を考慮し審判を自動で割り当てます</p>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Judge counts per segment input list */}
-            <div className="space-y-3">
-              <label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider block">各枠の1試合あたりジャッジ数設定</label>
-              <div className="border border-border rounded-xl p-3.5 space-y-3 bg-secondary/10">
-                {segments.map((seg) => (
-                  <div key={seg.id} className="flex items-center justify-between py-1 border-b border-border/40 last:border-0 last:pb-0">
-                    <div>
-                      <p className="text-sm font-medium">{seg.name}</p>
-                      {seg.start_time && <p className="text-xs text-muted-foreground">{seg.start_time}開始</p>}
-                    </div>
-                    <div className="flex items-center gap-1 bg-white border border-border rounded-lg p-0.5 shadow-sm">
+                  </TableCell>
+                  
+                  {/* Judge Count Column */}
+                  <TableCell align="center" className="py-3">
+                    <div className="inline-flex items-center gap-1 bg-white border border-border rounded-lg p-0.5 shadow-sm">
                       <button
                         type="button"
                         onClick={() => setSegmentJudgeCounts((prev) => ({ ...prev, [seg.id]: Math.max(1, (prev[seg.id] || 3) - 1) }))}
@@ -457,40 +397,65 @@ export default function ControlPage() {
                         +
                       </button>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {[
-                { label: `${matches.length}試合`, icon: "sports", ok: matches.length > 0 },
-                { label: `${staffs.filter(s => s.can_be_main_judge || s.can_be_sub_judge).length}名のジャッジ資格スタッフ`, icon: "badge", ok: staffs.filter(s => s.can_be_main_judge || s.can_be_sub_judge).length > 0 },
-              ].map(({ label, icon, ok }) => (
-                <span key={label} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${ok ? "border-green-200 bg-green-50 text-green-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
-                  <Icon name={ok ? "check_circle" : "warning"} size={13} />
-                  {label}
-                </span>
+                  </TableCell>
+                </TableRow>
               ))}
-            </div>
+            </TableBody>
+          </Table>
+        </CardContent>
+        {/* Card Footer with options and buttons */}
+        <div className="border-t border-border p-4 bg-secondary/5 space-y-4 rounded-b-xl">
+          {/* Options Block */}
+          <div className="text-sm">
+            <label className="flex items-start gap-2.5 cursor-pointer group hover:bg-muted/30 p-1.5 rounded-lg border border-border bg-white shadow-sm max-w-md">
+              <input type="checkbox" className="mt-0.5 w-4 h-4 accent-primary rounded"
+                checked={genForm.overwrite} onChange={(e) => setGenForm((f) => ({ ...f, overwrite: e.target.checked }))} />
+              <div>
+                <p className="text-sm font-semibold text-destructive">既存試合を削除して再生成</p>
+                <p className="text-xs text-muted-foreground">現在の試合をすべて削除してから生成します</p>
+              </div>
+            </label>
+          </div>
 
-            <Button
-              className="w-full"
-              onClick={handleAssignJudges}
-              loading={assigningJudges}
-              disabled={matches.length === 0 || staffs.filter(s => s.can_be_main_judge || s.can_be_sub_judge).length === 0}
-            >
-              <Icon name="auto_awesome" size={18} />
-              <span className="ml-2">{assigningJudges ? "割り当て中..." : "審判の割り当てを自動生成"}</span>
-            </Button>
-            {matches.length === 0 && (
-              <p className="text-xs text-center text-muted-foreground">
-                先に試合の組み合わせを生成してください
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+          {/* Action Buttons Row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+            <div>
+              <Button
+                className="w-full font-semibold"
+                onClick={handleGenerate}
+                loading={generating}
+                disabled={teams.length < 2}
+              >
+                <Icon name="auto_awesome" size={18} />
+                <span className="ml-2">{generating ? "生成中..." : "試合の組み合わせを生成"}</span>
+              </Button>
+              {teams.length < 2 && (
+                <p className="text-xs text-center text-muted-foreground mt-1">
+                  チームを2チーム以上登録すると生成できます
+                </p>
+              )}
+            </div>
+            
+            <div>
+              <Button
+                className="w-full font-semibold"
+                variant="outlined"
+                onClick={handleAssignJudges}
+                loading={assigningJudges}
+                disabled={matches.length === 0 || staffs.filter(s => s.can_be_main_judge || s.can_be_sub_judge).length === 0}
+              >
+                <Icon name="gavel" size={18} />
+                <span className="ml-2">{assigningJudges ? "割り当て中..." : "審判の自動割り当て"}</span>
+              </Button>
+              {matches.length === 0 && (
+                <p className="text-xs text-center text-muted-foreground mt-1">
+                  先に試合の組み合わせを生成してください
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </Card>
 
       {/* Match list */}
       <div className="space-y-6">
