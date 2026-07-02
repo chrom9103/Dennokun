@@ -57,6 +57,7 @@ class MatchListItem(BaseModel):
     main_judge_staff_id: Optional[int] = None
     sub_judge1_staff_id: Optional[int] = None
     sub_judge2_staff_id: Optional[int] = None
+    timekeeper_staff_id: Optional[int] = None
     judges_assignment_count: Optional[int] = None
     order_number_in_segment: Optional[int] = None
     note: Optional[str] = None
@@ -70,6 +71,7 @@ class MatchListItem(BaseModel):
     section_name: Optional[str] = None
     aff_team_name: Optional[str] = None
     neg_team_name: Optional[str] = None
+    timekeeper_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -94,6 +96,7 @@ class MatchDetail(MatchListItem):
     main_judge_name: Optional[str] = None
     sub_judge1_name: Optional[str] = None
     sub_judge2_name: Optional[str] = None
+    timekeeper_name: Optional[str] = None
     start_time: Optional[str] = None
     end_time: Optional[str] = None
     voting_details: List[Any] = []

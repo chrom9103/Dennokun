@@ -34,6 +34,7 @@ class MatchAssignmentUpdate(BaseModel):
     main_judge_staff_id: Optional[int] = None
     sub_judge1_staff_id: Optional[int] = None
     sub_judge2_staff_id: Optional[int] = None
+    timekeeper_staff_id: Optional[int] = None
     event_section_id: Optional[int] = None
     order_number_in_segment: Optional[int] = None
 

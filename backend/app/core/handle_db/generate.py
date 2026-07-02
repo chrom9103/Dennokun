@@ -23,13 +23,14 @@ async def bulk_insert_matches(event_id: int, match_dicts: List[dict]) -> List[di
                            main_judge_staff_id,
                            sub_judge1_staff_id,
                            sub_judge2_staff_id,
+                           timekeeper_staff_id,
                            judges_assignment_count,
                            order_number_in_segment
-                       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
                        RETURNING id, event_id, event_timetable_segment_id, event_room_id,
                                  event_section_id, aff_team_id, neg_team_id,
                                  main_judge_staff_id, sub_judge1_staff_id, sub_judge2_staff_id,
-                                 judges_assignment_count, order_number_in_segment,
+                                 timekeeper_staff_id, judges_assignment_count, order_number_in_segment,
                                  is_result_confirmed, created_at, updated_at""",
                     event_id,
                     m.get("event_timetable_segment_id"),
@@ -40,6 +41,7 @@ async def bulk_insert_matches(event_id: int, match_dicts: List[dict]) -> List[di
                     m.get("main_judge_staff_id"),
                     m.get("sub_judge1_staff_id"),
                     m.get("sub_judge2_staff_id"),
+                    m.get("timekeeper_staff_id"),
                     m.get("judges_assignment_count", 0),
                     m.get("order_number_in_segment"),
                 )
@@ -78,10 +80,11 @@ async def update_match_assignment(
     main_judge_staff_id: Optional[int] = None,
     sub_judge1_staff_id: Optional[int] = None,
     sub_judge2_staff_id: Optional[int] = None,
+    timekeeper_staff_id: Optional[int] = None,
     event_section_id: Optional[int] = None,
     order_number_in_segment: Optional[int] = None,
 ) -> Optional[dict]:
-    """試合の割当情報（チーム・会場・時間枠・ジャッジ）を更新する。"""
+    """試合の割当情報（チーム・会場・時間枠・ジャッジ・司会タイマー）を更新する。"""
     from app.core.db import get_db_connection
     from app.core.handle_db.matches import get_match_by_id
     conn = await get_db_connection()
@@ -101,6 +104,8 @@ async def update_match_assignment(
             fields["sub_judge1_staff_id"] = sub_judge1_staff_id
         if sub_judge2_staff_id is not None:
             fields["sub_judge2_staff_id"] = sub_judge2_staff_id
+        if timekeeper_staff_id is not None:
+            fields["timekeeper_staff_id"] = timekeeper_staff_id
         if event_section_id is not None:
             fields["event_section_id"] = event_section_id
         if order_number_in_segment is not None:
@@ -121,7 +126,7 @@ async def update_match_assignment(
 
 
 async def bulk_update_match_judges(match_dicts: List[dict]) -> None:
-    """試合のジャッジ割り当て情報（主審・副審1・副審2・人数）を一括更新する。"""
+    """試合のジャッジ・司会タイマー割り当て情報を一括更新する。"""
     from app.core.db import get_db_connection
     conn = await get_db_connection()
     try:
@@ -132,15 +137,16 @@ async def bulk_update_match_judges(match_dicts: List[dict]) -> None:
                            main_judge_staff_id = $1,
                            sub_judge1_staff_id = $2,
                            sub_judge2_staff_id = $3,
-                           judges_assignment_count = $4,
+                           timekeeper_staff_id = $4,
+                           judges_assignment_count = $5,
                            updated_at = NOW()
-                       WHERE id = $5 AND deleted_at IS NULL""",
+                       WHERE id = $6 AND deleted_at IS NULL""",
                     m.get("main_judge_staff_id"),
                     m.get("sub_judge1_staff_id"),
                     m.get("sub_judge2_staff_id"),
+                    m.get("timekeeper_staff_id"),
                     m.get("judges_assignment_count", 0),
                     m["id"],
                 )
     finally:
         await conn.close()
-

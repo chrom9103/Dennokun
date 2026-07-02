@@ -3,7 +3,7 @@ judge_assigner.py — ジャッジ割当ロジック
 ==========================================
 
 【現在の実装】
-  試合ごとに利用可能なジャッジを割り当てる。
+  試合ごとに利用可能なジャッジ・司会タイマーを割り当てる。
   制約:
     1. can_be_main_judge/can_be_sub_judge/can_be_timekeeper フラグ
     2. 同一試合の両チームに対して interested_school_ids に含まれるジャッジは除外
@@ -17,12 +17,12 @@ judge_assigner.py — ジャッジ割当ロジック
 【入力】
   matches: list[dict]  — スロット割当済みの対戦ペア（aff_team_id, neg_team_id 等）
   staffs: list[dict]   — event_staffs テーブルの行（+ interested_school_ids, present_segment_ids）
-  teams: list[dict]    — event_teams テーブルの行（event_school_id が必要）
+  teams: list[dict]    — event_teams テーブル of id, event_school_id
   judges_per_match: int — 1試合あたりのジャッジ数（通常3）
 
 【出力】
   matches に main_judge_staff_id, sub_judge1_staff_id, sub_judge2_staff_id,
-  judges_assignment_count を追加したもの。
+  timekeeper_staff_id, judges_assignment_count を追加したもの。
 """
 
 from __future__ import annotations
@@ -33,19 +33,17 @@ def assign_judges(
     matches: list[dict],
     staffs: list[dict],
     teams: list[dict],
-    judges_per_match: int = 3,
+    judges_per_match: int | dict[int, int] = 3,
 ) -> list[dict]:
     """
-    試合リストにジャッジを割り当てる。
-
-    主審・副審をそれぞれの役割条件で選出し、各ジャッジの担当回数を追跡して最少担当優先で割り当てる。
+    試合リストにジャッジ（主審・副審）および司会タイマーを割り当てる。
     """
     # チームID → 学校IDのマップ
     team_school_map: dict[int, int | None] = {
         t["id"]: t.get("event_school_id") for t in teams
     }
 
-    # ジャッジの担当カウント
+    # ジャッジ・スタッフの担当カウント
     judge_assignment_count: dict[int, int] = {s["id"]: 0 for s in staffs}
 
     # 時間枠ごとの割当済みジャッジID（同一時間枠での重複防止）
@@ -114,6 +112,22 @@ def assign_judges(
         if len(sub_judges) < 2:
             match["sub_judge2_staff_id"] = None
 
+        # 3. 司会タイマーの選出 (1名)
+        timekeeper = _pick_timekeeper(
+            staffs=staffs,
+            involved_school_ids=involved_school_ids,
+            segment_used=segment_judge_used.get(seg_id, set()),
+            assignment_count=judge_assignment_count,
+        )
+
+        if timekeeper:
+            assigned_ids.append(timekeeper["id"])
+            judge_assignment_count[timekeeper["id"]] += 1
+            segment_judge_used[seg_id].add(timekeeper["id"])
+            match["timekeeper_staff_id"] = timekeeper["id"]
+        else:
+            match["timekeeper_staff_id"] = None
+
         match["judges_assignment_count"] = len(assigned_ids)
 
     return matches
@@ -173,3 +187,28 @@ def _pick_sub_judges(
     candidates.sort(key=lambda s: assignment_count.get(s["id"], 0))
     return candidates[:count]
 
+
+def _pick_timekeeper(
+    staffs: list[dict],
+    involved_school_ids: set[int],
+    segment_used: set[int],
+    assignment_count: dict[int, int],
+) -> dict | None:
+    """条件を満たす司会タイマー可能なスタッフから、担当回数の最も少ない者を1名選出する。"""
+    candidates = []
+    for s in staffs:
+        if s["id"] in segment_used:
+            continue
+        if not s.get("can_be_timekeeper"):
+            continue
+        interested = s.get("interested_school_ids") or []
+        if any(sid in involved_school_ids for sid in interested):
+            continue
+        candidates.append(s)
+
+    if not candidates:
+        return None
+
+    random.shuffle(candidates)
+    candidates.sort(key=lambda s: assignment_count.get(s["id"], 0))
+    return candidates[0]

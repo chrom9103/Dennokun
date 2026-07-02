@@ -62,7 +62,9 @@ export interface MatchListItem {
   main_judge_staff_id: number | null;
   sub_judge1_staff_id: number | null;
   sub_judge2_staff_id: number | null;
+  timekeeper_staff_id: number | null;
   neg_team_name: string | null;
+  timekeeper_name: string | null;
 }
 
 // ── Match voting detail ────────────────────────────────────────────────────────
@@ -108,9 +110,11 @@ export interface MatchDetail extends MatchListItem {
   main_judge_staff_id: number | null;
   sub_judge1_staff_id: number | null;
   sub_judge2_staff_id: number | null;
+  timekeeper_staff_id: number | null;
   main_judge_name: string | null;
   sub_judge1_name: string | null;
   sub_judge2_name: string | null;
+  timekeeper_name: string | null;
   start_time: string | null;
   end_time: string | null;
   voting_details: VotingDetail[];

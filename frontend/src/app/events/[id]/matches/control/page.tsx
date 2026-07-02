@@ -35,6 +35,7 @@ interface EditForm {
   main_judge_staff_id: string;
   sub_judge1_staff_id: string;
   sub_judge2_staff_id: string;
+  timekeeper_staff_id: string;
 }
 
 export default function ControlPage() {
@@ -220,6 +221,7 @@ export default function ControlPage() {
       main_judge_staff_id: m.main_judge_staff_id != null ? String(m.main_judge_staff_id) : "",
       sub_judge1_staff_id: m.sub_judge1_staff_id != null ? String(m.sub_judge1_staff_id) : "",
       sub_judge2_staff_id: m.sub_judge2_staff_id != null ? String(m.sub_judge2_staff_id) : "",
+      timekeeper_staff_id: m.timekeeper_staff_id != null ? String(m.timekeeper_staff_id) : "",
     });
   }
 
@@ -235,6 +237,7 @@ export default function ControlPage() {
       if (editForm.main_judge_staff_id) update.main_judge_staff_id = parseInt(editForm.main_judge_staff_id);
       if (editForm.sub_judge1_staff_id) update.sub_judge1_staff_id = parseInt(editForm.sub_judge1_staff_id);
       if (editForm.sub_judge2_staff_id) update.sub_judge2_staff_id = parseInt(editForm.sub_judge2_staff_id);
+      if (editForm.timekeeper_staff_id) update.timekeeper_staff_id = parseInt(editForm.timekeeper_staff_id);
 
       await updateMatchAssignment(eventId, editForm.matchId, update);
       setEditForm(null);
@@ -562,6 +565,7 @@ export default function ControlPage() {
                         <TableHead align="center" className="text-center w-12">VS</TableHead>
                         <TableHead>否定側</TableHead>
                         <TableHead>審判</TableHead>
+                        <TableHead>司会タイマー</TableHead>
                         <TableHead align="center" className="text-center w-20">状態</TableHead>
                         <TableHead align="right" className="pr-4 text-right w-16">微調整</TableHead>
                       </TableRow>
@@ -584,6 +588,7 @@ export default function ControlPage() {
                             <TableCell align="center" className="text-center font-bold text-xs text-muted-foreground/60 w-12">VS</TableCell>
                             <TableCell className="font-semibold text-sm">{m.neg_team_name ?? <span className="text-muted-foreground text-xs">-</span>}</TableCell>
                             <TableCell className="text-xs text-muted-foreground font-medium">{judgeLabel || "-"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground font-medium">{m.timekeeper_name || "-"}</TableCell>
                             <TableCell align="center" className="text-center w-20">
                               {m.is_result_confirmed
                                 ? <Badge variant="success" className="text-[10px] font-semibold">確定</Badge>
@@ -697,6 +702,15 @@ export default function ControlPage() {
                   className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary focus:outline-none">
                   <option value="">未設定</option>
                   {judgeStaffs.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">司会タイマー</label>
+                <select value={editForm.timekeeper_staff_id}
+                  onChange={(e) => setEditForm((f) => f ? { ...f, timekeeper_staff_id: e.target.value } : f)}
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary focus:outline-none">
+                  <option value="">未設定</option>
+                  {staffs.filter((s) => s.can_be_timekeeper).map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
                 </select>
               </div>
             </div>

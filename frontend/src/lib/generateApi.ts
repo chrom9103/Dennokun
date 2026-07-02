@@ -49,6 +49,7 @@ export interface MatchAssignmentUpdate {
   main_judge_staff_id?: number | null;
   sub_judge1_staff_id?: number | null;
   sub_judge2_staff_id?: number | null;
+  timekeeper_staff_id?: number | null;
   event_section_id?: number | null;
   order_number_in_segment?: number | null;
 }

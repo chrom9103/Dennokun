@@ -209,12 +209,13 @@ export default function MatchEditPage() {
       {/* Match info */}
       <div className="bg-white rounded-xl shadow-sm border border-border p-6">
         <h3 className="font-semibold mb-4 text-muted-foreground text-sm uppercase tracking-wide">試合情報</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
           {[
             ["時間枠", match?.timetable_segment_name ?? "-"],
             ["会場", match?.room_name ?? "-"],
             ["部門", match?.section_name ?? "-"],
             ["開始", match?.start_time ?? "-"],
+            ["司会タイマー", match?.timekeeper_name ?? "-"],
           ].map(([l, v]) => (
             <div key={l}>
               <p className="text-xs text-muted-foreground mb-1">{l}</p>
