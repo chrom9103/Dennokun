@@ -38,7 +38,7 @@ def assign_judges(
     """
     試合リストにジャッジを割り当てる。
 
-    各ジャッジの担当回数を追跡し、最少担当優先で割り当てる。
+    主審・副審をそれぞれの役割条件で選出し、各ジャッジの担当回数を追跡して最少担当優先で割り当てる。
     """
     # チームID → 学校IDのマップ
     team_school_map: dict[int, int | None] = {
@@ -64,86 +64,104 @@ def assign_judges(
                 if school_id:
                     involved_school_ids.add(school_id)
 
-        # 利用可能ジャッジを絞り込む
-        available = _filter_available_judges(
+        assigned_ids = []
+
+        # 1. 主審の選出
+        main_judge = _pick_main_judge(
             staffs=staffs,
             involved_school_ids=involved_school_ids,
             segment_used=segment_judge_used.get(seg_id, set()),
             assignment_count=judge_assignment_count,
         )
 
-        assigned = _pick_judges(available, judges_per_match, judge_assignment_count)
+        if main_judge:
+            assigned_ids.append(main_judge["id"])
+            judge_assignment_count[main_judge["id"]] += 1
+            segment_judge_used[seg_id].add(main_judge["id"])
+            match["main_judge_staff_id"] = main_judge["id"]
+        else:
+            match["main_judge_staff_id"] = None
 
-        # 担当数を更新し、時間枠の使用済みセットに追加
-        for s in assigned:
-            judge_assignment_count[s["id"]] = judge_assignment_count.get(s["id"], 0) + 1
-            segment_judge_used[seg_id].add(s["id"])
+        # 2. 副審の選出 (judges_per_match - 1 人)
+        sub_judges_to_pick = max(0, judges_per_match - 1)
+        sub_judges = _pick_sub_judges(
+            staffs=staffs,
+            count=sub_judges_to_pick,
+            involved_school_ids=involved_school_ids,
+            segment_used=segment_judge_used.get(seg_id, set()),
+            assignment_count=judge_assignment_count,
+        )
 
-        # 割当結果をマッチに書き込む
-        match["judges_assignment_count"] = len(assigned)
-        match["main_judge_staff_id"] = assigned[0]["id"] if len(assigned) > 0 else None
-        match["sub_judge1_staff_id"] = assigned[1]["id"] if len(assigned) > 1 else None
-        match["sub_judge2_staff_id"] = assigned[2]["id"] if len(assigned) > 2 else None
+        for i, sj in enumerate(sub_judges):
+            assigned_ids.append(sj["id"])
+            judge_assignment_count[sj["id"]] += 1
+            segment_judge_used[seg_id].add(sj["id"])
+            if i == 0:
+                match["sub_judge1_staff_id"] = sj["id"]
+            elif i == 1:
+                match["sub_judge2_staff_id"] = sj["id"]
+
+        if len(sub_judges) < 1:
+            match["sub_judge1_staff_id"] = None
+        if len(sub_judges) < 2:
+            match["sub_judge2_staff_id"] = None
+
+        match["judges_assignment_count"] = len(assigned_ids)
 
     return matches
 
 
 # ─── Private helpers ──────────────────────────────────────────────────────────
 
-def _filter_available_judges(
+def _pick_main_judge(
     staffs: list[dict],
     involved_school_ids: set[int],
     segment_used: set[int],
-    assignment_count: dict[int, int],  # noqa: ARG001 (used by caller)
-) -> list[dict]:
-    """利害関係・時間枠重複を除いた利用可能ジャッジを返す。"""
-    available = []
+    assignment_count: dict[int, int],
+) -> dict | None:
+    """条件を満たす主審可能なスタッフから、担当回数の最も少ない者を1名選出する。"""
+    candidates = []
     for s in staffs:
-        # 同一時間枠ですでに割当済み
         if s["id"] in segment_used:
             continue
-        # 利害関係のある学校が試合に含まれる
-        interested: list[int] = s.get("interested_school_ids") or []
+        if not s.get("can_be_main_judge"):
+            continue
+        interested = s.get("interested_school_ids") or []
         if any(sid in involved_school_ids for sid in interested):
             continue
-        # ジャッジとして担当可能（主審か副審）
-        if not (s.get("can_be_main_judge") or s.get("can_be_sub_judge")):
-            continue
-        available.append(s)
-    return available
+        candidates.append(s)
+
+    if not candidates:
+        return None
+
+    random.shuffle(candidates)
+    candidates.sort(key=lambda s: assignment_count.get(s["id"], 0))
+    return candidates[0]
 
 
-def _pick_judges(
-    available: list[dict],
+def _pick_sub_judges(
+    staffs: list[dict],
     count: int,
+    involved_school_ids: set[int],
+    segment_used: set[int],
     assignment_count: dict[int, int],
 ) -> list[dict]:
-    """
-    担当回数が最も少ないジャッジを優先して count 人を選ぶ。
-    担当回数が同じ場合はランダムにシャッフル（公平化）。
-    """
-    if not available:
+    """条件を満たす副審可能なスタッフから、担当回数の最も少ない者を優先して count 人選出する。"""
+    candidates = []
+    for s in staffs:
+        if s["id"] in segment_used:
+            continue
+        if not s.get("can_be_sub_judge"):
+            continue
+        interested = s.get("interested_school_ids") or []
+        if any(sid in involved_school_ids for sid in interested):
+            continue
+        candidates.append(s)
+
+    if not candidates:
         return []
 
-    # 担当数昇順でソートし、同数内はシャッフル
-    random.shuffle(available)
-    sorted_available = sorted(available, key=lambda s: assignment_count.get(s["id"], 0))
+    random.shuffle(candidates)
+    candidates.sort(key=lambda s: assignment_count.get(s["id"], 0))
+    return candidates[:count]
 
-    # can_be_main_judge のスタッフを主審に優先
-    main_candidates = [s for s in sorted_available if s.get("can_be_main_judge")]
-    sub_candidates = [s for s in sorted_available if not s.get("can_be_main_judge")]
-
-    picked: list[dict] = []
-    if main_candidates:
-        picked.append(main_candidates[0])
-        remaining = main_candidates[1:] + sub_candidates
-    else:
-        remaining = sorted_available
-
-    for s in remaining:
-        if len(picked) >= count:
-            break
-        if s not in picked:
-            picked.append(s)
-
-    return picked[:count]
