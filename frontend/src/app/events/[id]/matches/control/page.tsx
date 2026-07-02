@@ -562,11 +562,32 @@ export default function ControlPage() {
                           const renderStaffName = (staff: Staff | undefined) => {
                             if (!staff) return null;
                             const isDuplicate = (segmentStaffAssignments[staff.id] || 0) > 1;
-                            return (
-                              <span className={isDuplicate ? "text-red-600 font-semibold" : ""}>
-                                {staff.name}
-                              </span>
+
+                            const affTeam = teams.find((t) => t.id === m.aff_team_id);
+                            const negTeam = teams.find((t) => t.id === m.neg_team_id);
+                            const affSchoolId = affTeam?.event_school_id;
+                            const negSchoolId = negTeam?.event_school_id;
+
+                            const isSchoolConflict = !!(
+                              (affSchoolId && staff.interested_school_ids?.includes(affSchoolId)) ||
+                              (negSchoolId && staff.interested_school_ids?.includes(negSchoolId))
                             );
+
+                            if (isDuplicate) {
+                              return (
+                                <span className="text-red-600 font-semibold">
+                                  {staff.name}
+                                </span>
+                              );
+                            }
+                            if (isSchoolConflict) {
+                              return (
+                                <span className="text-amber-600 font-semibold">
+                                  {staff.name}
+                                </span>
+                              );
+                            }
+                            return <span>{staff.name}</span>;
                           };
 
                           const renderJudges = () => {
