@@ -1,4 +1,4 @@
-"""Master data router: sections, rooms, timetable segments, schools."""
+"""Master data router: sections, rooms, timetable segments, schools, team-groups, teams, staffs."""
 from fastapi import APIRouter, HTTPException
 from typing import List
 
@@ -7,6 +7,9 @@ from app.models.master import (
     Room, RoomCreate, RoomUpdate,
     TimetableSegment, TimetableSegmentCreate, TimetableSegmentUpdate,
     School, SchoolCreate, SchoolUpdate,
+    TeamGroup, TeamGroupCreate, TeamGroupUpdate,
+    Team, TeamCreate, TeamUpdate,
+    Staff, StaffCreate, StaffUpdate,
 )
 from app.core.db import (
     get_all_sections, get_section_by_id, create_section, update_section, delete_section,
@@ -14,6 +17,9 @@ from app.core.db import (
     get_all_timetable_segments, get_timetable_segment_by_id, create_timetable_segment,
     update_timetable_segment, delete_timetable_segment,
     get_all_schools, get_school_by_id, create_school, update_school, delete_school,
+    get_all_team_groups, get_team_group_by_id, create_team_group, update_team_group, delete_team_group,
+    get_all_teams, get_team_by_id, create_team, update_team, delete_team,
+    get_all_staffs, get_staff_by_id, create_staff, update_staff, delete_staff,
 )
 
 router = APIRouter(prefix="/api/events/{event_id}", tags=["master"])
@@ -244,6 +250,154 @@ async def delete_school_endpoint(event_id: int, school_id: int):
         success = await delete_school(school_id)
         if not success:
             raise HTTPException(status_code=404, detail="School not found")
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Team Groups (チームグループ) ───────────────────────────────────────────────
+
+@router.get("/team-groups", response_model=List[TeamGroup])
+async def list_team_groups(event_id: int):
+    try:
+        return await get_all_team_groups(event_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/team-groups", response_model=TeamGroup, status_code=201)
+async def create_new_team_group(event_id: int, data: TeamGroupCreate):
+    try:
+        return await create_team_group(event_id=event_id, name=data.name)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/team-groups/{group_id}", response_model=TeamGroup)
+async def update_team_group_endpoint(event_id: int, group_id: int, data: TeamGroupUpdate):
+    try:
+        group = await update_team_group(group_id, name=data.name)
+        if not group or group["event_id"] != event_id:
+            raise HTTPException(status_code=404, detail="Team group not found")
+        return group
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/team-groups/{group_id}")
+async def delete_team_group_endpoint(event_id: int, group_id: int):
+    try:
+        success = await delete_team_group(group_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Team group not found")
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Teams (チーム) ────────────────────────────────────────────────────────────
+
+@router.get("/teams", response_model=List[Team])
+async def list_teams(event_id: int):
+    try:
+        return await get_all_teams(event_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/teams", response_model=Team, status_code=201)
+async def create_new_team(event_id: int, data: TeamCreate):
+    try:
+        return await create_team(event_id=event_id, **data.dict())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/teams/{team_id}", response_model=Team)
+async def update_team_endpoint(event_id: int, team_id: int, data: TeamUpdate):
+    try:
+        team = await update_team(team_id, **data.dict(exclude_unset=True))
+        if not team or team["event_id"] != event_id:
+            raise HTTPException(status_code=404, detail="Team not found")
+        return team
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/teams/{team_id}")
+async def delete_team_endpoint(event_id: int, team_id: int):
+    try:
+        success = await delete_team(team_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Team not found")
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Staffs (スタッフ) ─────────────────────────────────────────────────────────
+
+@router.get("/staffs", response_model=List[Staff])
+async def list_staffs(event_id: int):
+    try:
+        return await get_all_staffs(event_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/staffs", response_model=Staff, status_code=201)
+async def create_new_staff(event_id: int, data: StaffCreate):
+    try:
+        d = data.dict()
+        interested = d.pop("interested_school_ids", None)
+        segments = d.pop("present_segment_ids", None)
+        return await create_staff(
+            event_id=event_id,
+            interested_school_ids=interested,
+            present_segment_ids=segments,
+            **d,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/staffs/{staff_id}", response_model=Staff)
+async def update_staff_endpoint(event_id: int, staff_id: int, data: StaffUpdate):
+    try:
+        d = data.dict(exclude_unset=True)
+        interested = d.pop("interested_school_ids", None)
+        segments = d.pop("present_segment_ids", None)
+        staff = await update_staff(
+            staff_id,
+            interested_school_ids=interested,
+            present_segment_ids=segments,
+            **d,
+        )
+        if not staff or staff["event_id"] != event_id:
+            raise HTTPException(status_code=404, detail="Staff not found")
+        return staff
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/staffs/{staff_id}")
+async def delete_staff_endpoint(event_id: int, staff_id: int):
+    try:
+        success = await delete_staff(staff_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Staff not found")
         return {"status": "ok"}
     except HTTPException:
         raise

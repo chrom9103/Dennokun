@@ -198,3 +198,140 @@ export async function updateSchool(eventId: number, schoolId: number, data: Part
 export async function deleteSchool(eventId: number, schoolId: number): Promise<void> {
   await apiFetch(`/api/events/${eventId}/schools/${schoolId}`, { method: "DELETE" });
 }
+
+// ── TeamGroup (チームグループ) ──────────────────────────────────────────────────
+
+export interface TeamGroup {
+  id: number;
+  event_id: number;
+  name: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export async function fetchTeamGroups(eventId: number): Promise<TeamGroup[]> {
+  return apiFetch(`/api/events/${eventId}/team-groups`);
+}
+
+export async function createTeamGroup(eventId: number, name: string): Promise<TeamGroup> {
+  return apiFetch(`/api/events/${eventId}/team-groups`, {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function updateTeamGroup(eventId: number, groupId: number, name: string): Promise<TeamGroup> {
+  return apiFetch(`/api/events/${eventId}/team-groups/${groupId}`, {
+    method: "PUT",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function deleteTeamGroup(eventId: number, groupId: number): Promise<void> {
+  await apiFetch(`/api/events/${eventId}/team-groups/${groupId}`, { method: "DELETE" });
+}
+
+// ── Team (チーム) ─────────────────────────────────────────────────────────────
+
+export interface Team {
+  id: number;
+  event_id: number;
+  name: string;
+  event_section_id: number | null;
+  event_school_id: number | null;
+  team_group_id: number | null;
+  is_seed: boolean;
+  order_of_application: number | null;
+  note: string | null;
+  section_name: string | null;
+  school_name: string | null;
+  group_name: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export interface TeamCreate {
+  name: string;
+  event_section_id?: number | null;
+  event_school_id?: number | null;
+  team_group_id?: number | null;
+  is_seed?: boolean;
+  order_of_application?: number | null;
+  note?: string | null;
+}
+
+export async function fetchTeams(eventId: number): Promise<Team[]> {
+  return apiFetch(`/api/events/${eventId}/teams`);
+}
+
+export async function createTeam(eventId: number, data: TeamCreate): Promise<Team> {
+  return apiFetch(`/api/events/${eventId}/teams`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateTeam(eventId: number, teamId: number, data: Partial<TeamCreate>): Promise<Team> {
+  return apiFetch(`/api/events/${eventId}/teams/${teamId}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteTeam(eventId: number, teamId: number): Promise<void> {
+  await apiFetch(`/api/events/${eventId}/teams/${teamId}`, { method: "DELETE" });
+}
+
+// ── Staff (スタッフ) ────────────────────────────────────────────────────────────
+
+export interface Staff {
+  id: number;
+  event_id: number;
+  name: string;
+  can_be_main_judge: boolean;
+  can_be_sub_judge: boolean;
+  can_be_timekeeper: boolean;
+  order_of_application: number | null;
+  note: string | null;
+  interested_school_ids: number[];
+  interested_school_names: string[];
+  present_segment_ids: number[];
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export interface StaffCreate {
+  name: string;
+  can_be_main_judge?: boolean;
+  can_be_sub_judge?: boolean;
+  can_be_timekeeper?: boolean;
+  order_of_application?: number | null;
+  note?: string | null;
+  interested_school_ids?: number[];
+  present_segment_ids?: number[];
+}
+
+export async function fetchStaffs(eventId: number): Promise<Staff[]> {
+  return apiFetch(`/api/events/${eventId}/staffs`);
+}
+
+export async function createStaff(eventId: number, data: StaffCreate): Promise<Staff> {
+  return apiFetch(`/api/events/${eventId}/staffs`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateStaff(eventId: number, staffId: number, data: Partial<StaffCreate>): Promise<Staff> {
+  return apiFetch(`/api/events/${eventId}/staffs/${staffId}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteStaff(eventId: number, staffId: number): Promise<void> {
+  await apiFetch(`/api/events/${eventId}/staffs/${staffId}`, { method: "DELETE" });
+}
