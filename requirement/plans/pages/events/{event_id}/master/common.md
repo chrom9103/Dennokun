@@ -21,3 +21,11 @@
 ## 備考
 - `nameAliases` は外部 TSV インポート時の同定に使用される。
 
+
+
+## ナレッジ（2026-07-02）
+- 直近コミット 85ff3c4 で、イベントマスタ（学校・会場・時間枠）の CRUD と API エンドポイントが実装された。
+- 直近コミット 5aed0ca で、スタッフ・チーム・試合結果に関するバックエンドハンドラーとフロント管理画面が実装された。
+- 今回の修正で backend/app/core/init_db.py に起動時のスキーマ互換処理を追加し、event_timetable_segments に start_time/end_time が無い既存 DB でも列追加と time_display からの補完を行うようにした。
+- 背景として、backend/db/init/001_schema.sql は既存ボリュームには再適用されないため、初期化済み環境では実 DB スキーマが要件定義と乖離しうる。
+
