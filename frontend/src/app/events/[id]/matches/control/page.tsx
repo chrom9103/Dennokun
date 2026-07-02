@@ -507,72 +507,118 @@ export default function ControlPage() {
               return { seg, matches: segMatches };
             })
             .filter((item) => item.matches.length > 0)
-            .map(({ seg, matches: segMatches }) => (
-              <Card key={seg.id} className="overflow-hidden border-border/80 shadow-sm">
-                <CardHeader className="bg-muted/30 border-b border-border/60 py-3 flex flex-row items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-1 rounded bg-secondary/80 text-muted-foreground"><Icon name="schedule" size={16} /></div>
-                    <span className="font-bold text-sm text-foreground">{seg.name}</span>
-                    {seg.start_time && (
-                      <span className="text-xs text-muted-foreground bg-white px-2 py-0.5 border border-border rounded-full font-medium">
-                        {seg.start_time}〜
-                      </span>
-                    )}
-                  </div>
-                  <Badge variant="outline" className="bg-white border-border/80 text-xs font-semibold">{segMatches.length} 試合</Badge>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <Table className="border-none rounded-none">
-                    <TableHeader>
-                      <TableRow hover={false}>
-                        <TableHead className="pl-4">会場</TableHead>
-                        <TableHead>部門</TableHead>
-                        <TableHead>肯定側</TableHead>
-                        <TableHead align="center" className="text-center w-12">VS</TableHead>
-                        <TableHead>否定側</TableHead>
-                        <TableHead>審判</TableHead>
-                        <TableHead>司会タイマー</TableHead>
-                        <TableHead align="center" className="text-center w-20">状態</TableHead>
-                        <TableHead align="right" className="pr-4 text-right w-16">微調整</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {segMatches.map((m) => {
-                        const mainJudge = staffs.find((s) => s.id === (m as any).main_judge_staff_id);
-                        const subJudge1 = staffs.find((s) => s.id === (m as any).sub_judge1_staff_id);
-                        const subJudge2 = staffs.find((s) => s.id === (m as any).sub_judge2_staff_id);
-                        const judgeLabel = [mainJudge?.name, subJudge1?.name, subJudge2?.name].filter(Boolean).join(" / ");
-                        return (
-                          <TableRow key={m.id}>
-                            <TableCell className="text-sm font-medium pl-4">{m.room_name ?? <span className="italic text-xs text-muted-foreground">未割当</span>}</TableCell>
-                            <TableCell>
-                              {m.section_name
-                                ? <Badge variant="outline" className="text-[10px] border-primary/30 text-primary font-medium">{m.section_name}</Badge>
-                                : null}
-                            </TableCell>
-                            <TableCell className="font-semibold text-sm">{m.aff_team_name ?? <span className="text-muted-foreground text-xs">-</span>}</TableCell>
-                            <TableCell align="center" className="text-center font-bold text-xs text-muted-foreground/60 w-12">VS</TableCell>
-                            <TableCell className="font-semibold text-sm">{m.neg_team_name ?? <span className="text-muted-foreground text-xs">-</span>}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground font-medium">{judgeLabel || "-"}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground font-medium">{m.timekeeper_name || "-"}</TableCell>
-                            <TableCell align="center" className="text-center w-20">
-                              {m.is_result_confirmed
-                                ? <Badge variant="success" className="text-[10px] font-semibold">確定</Badge>
-                                : <Badge variant="outline" className="text-[10px] font-medium">未入力</Badge>}
-                            </TableCell>
-                            <TableCell align="right" className="pr-4 text-right w-16">
-                              <Button variant="ghost" size="sm" className="p-1.5 h-auto rounded-full text-primary hover:bg-primary/5 active:scale-95" onClick={() => openEdit(m)}>
-                                <Icon name="tune" size={18} />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            ))
+            .map(({ seg, matches: segMatches }) => {
+              // Count staff assignments across all matches in this segment to detect duplicate booking
+              const segmentStaffAssignments: Record<number, number> = {};
+              segMatches.forEach((m) => {
+                [
+                  m.main_judge_staff_id,
+                  m.sub_judge1_staff_id,
+                  m.sub_judge2_staff_id,
+                  m.timekeeper_staff_id,
+                ].forEach((id) => {
+                  if (id) {
+                    segmentStaffAssignments[id] = (segmentStaffAssignments[id] || 0) + 1;
+                  }
+                });
+              });
+
+              return (
+                <Card key={seg.id} className="overflow-hidden border-border/80 shadow-sm">
+                  <CardHeader className="bg-muted/30 border-b border-border/60 py-3 flex flex-row items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-1 rounded bg-secondary/80 text-muted-foreground"><Icon name="schedule" size={16} /></div>
+                      <span className="font-bold text-sm text-foreground">{seg.name}</span>
+                      {seg.start_time && (
+                        <span className="text-xs text-muted-foreground bg-white px-2 py-0.5 border border-border rounded-full font-medium">
+                          {seg.start_time}〜
+                        </span>
+                      )}
+                    </div>
+                    <Badge variant="outline" className="bg-white border-border/80 text-xs font-semibold">{segMatches.length} 試合</Badge>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <Table className="border-none rounded-none">
+                      <TableHeader>
+                        <TableRow hover={false}>
+                          <TableHead className="pl-4">会場</TableHead>
+                          <TableHead>部門</TableHead>
+                          <TableHead>肯定側</TableHead>
+                          <TableHead align="center" className="text-center w-12">VS</TableHead>
+                          <TableHead>否定側</TableHead>
+                          <TableHead>審判</TableHead>
+                          <TableHead>司会タイマー</TableHead>
+                          <TableHead align="center" className="text-center w-20">状態</TableHead>
+                          <TableHead align="right" className="pr-4 text-right w-16">微調整</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {segMatches.map((m) => {
+                          const mainJudge = staffs.find((s) => s.id === m.main_judge_staff_id);
+                          const subJudge1 = staffs.find((s) => s.id === m.sub_judge1_staff_id);
+                          const subJudge2 = staffs.find((s) => s.id === m.sub_judge2_staff_id);
+                          const timekeeper = staffs.find((s) => s.id === m.timekeeper_staff_id);
+
+                          const renderStaffName = (staff: Staff | undefined) => {
+                            if (!staff) return null;
+                            const isDuplicate = (segmentStaffAssignments[staff.id] || 0) > 1;
+                            return (
+                              <span className={isDuplicate ? "text-red-600 font-semibold" : ""}>
+                                {staff.name}
+                              </span>
+                            );
+                          };
+
+                          const renderJudges = () => {
+                            const elements: React.ReactNode[] = [];
+                            if (mainJudge) elements.push(renderStaffName(mainJudge));
+                            if (subJudge1) elements.push(renderStaffName(subJudge1));
+                            if (subJudge2) elements.push(renderStaffName(subJudge2));
+                            if (elements.length === 0) return "-";
+                            return (
+                              <>
+                                {elements.map((el, i) => (
+                                  <span key={i}>
+                                    {i > 0 && " / "}
+                                    {el}
+                                  </span>
+                                ))}
+                              </>
+                            );
+                          };
+
+                          return (
+                            <TableRow key={m.id}>
+                              <TableCell className="text-sm font-medium pl-4">{m.room_name ?? <span className="italic text-xs text-muted-foreground">未割当</span>}</TableCell>
+                              <TableCell>
+                                {m.section_name
+                                  ? <Badge variant="outline" className="text-[10px] border-primary/30 text-primary font-medium">{m.section_name}</Badge>
+                                  : null}
+                              </TableCell>
+                              <TableCell className="font-semibold text-sm">{m.aff_team_name ?? <span className="text-muted-foreground text-xs">-</span>}</TableCell>
+                              <TableCell align="center" className="text-center font-bold text-xs text-muted-foreground/60 w-12">VS</TableCell>
+                              <TableCell className="font-semibold text-sm">{m.neg_team_name ?? <span className="text-muted-foreground text-xs">-</span>}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground font-medium">{renderJudges()}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground font-medium">{renderStaffName(timekeeper) || "-"}</TableCell>
+                              <TableCell align="center" className="text-center w-20">
+                                {m.is_result_confirmed
+                                  ? <Badge variant="success" className="text-[10px] font-semibold">確定</Badge>
+                                  : <Badge variant="outline" className="text-[10px] font-medium">未入力</Badge>}
+                              </TableCell>
+                              <TableCell align="right" className="pr-4 text-right w-16">
+                                <Button variant="ghost" size="sm" className="p-1.5 h-auto rounded-full text-primary hover:bg-primary/5 active:scale-95" onClick={() => openEdit(m)}>
+                                  <Icon name="tune" size={18} />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              );
+            })
         )}
       </div>
 
