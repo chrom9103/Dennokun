@@ -161,9 +161,9 @@ export default function ControlPage() {
       event_room_id: m.event_room_id != null ? String(m.event_room_id) : "",
       aff_team_id: m.aff_team_id != null ? String(m.aff_team_id) : "",
       neg_team_id: m.neg_team_id != null ? String(m.neg_team_id) : "",
-      main_judge_staff_id: "",
-      sub_judge1_staff_id: "",
-      sub_judge2_staff_id: "",
+      main_judge_staff_id: m.main_judge_staff_id != null ? String(m.main_judge_staff_id) : "",
+      sub_judge1_staff_id: m.sub_judge1_staff_id != null ? String(m.sub_judge1_staff_id) : "",
+      sub_judge2_staff_id: m.sub_judge2_staff_id != null ? String(m.sub_judge2_staff_id) : "",
     });
   }
 
@@ -394,7 +394,7 @@ export default function ControlPage() {
                 <TableHead>肯定側</TableHead>
                 <TableHead align="center">VS</TableHead>
                 <TableHead>否定側</TableHead>
-                <TableHead>主審</TableHead>
+                <TableHead>審判</TableHead>
                 <TableHead align="center">状態</TableHead>
                 <TableHead align="right">微調整</TableHead>
               </TableRow>
@@ -424,7 +424,10 @@ export default function ControlPage() {
                 </TableRow>
               ) : (
                 filteredMatches.map((m) => {
-                  const judgeStaff = staffs.find((s) => s.id === (m as any).main_judge_staff_id);
+                  const mainJudge = staffs.find((s) => s.id === (m as any).main_judge_staff_id);
+                  const subJudge1 = staffs.find((s) => s.id === (m as any).sub_judge1_staff_id);
+                  const subJudge2 = staffs.find((s) => s.id === (m as any).sub_judge2_staff_id);
+                  const judgeLabel = [mainJudge?.name, subJudge1?.name, subJudge2?.name].filter(Boolean).join(" / ");
                   return (
                     <TableRow key={m.id}>
                       <TableCell className="text-sm">{m.timetable_segment_name ?? <span className="text-muted-foreground italic text-xs">未割当</span>}</TableCell>
@@ -437,7 +440,7 @@ export default function ControlPage() {
                       <TableCell className="font-medium">{m.aff_team_name ?? <span className="text-muted-foreground text-xs">-</span>}</TableCell>
                       <TableCell align="center"><span className="text-muted-foreground font-bold text-xs">VS</span></TableCell>
                       <TableCell className="font-medium">{m.neg_team_name ?? <span className="text-muted-foreground text-xs">-</span>}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{judgeStaff?.name ?? "-"}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{judgeLabel || "-"}</TableCell>
                       <TableCell align="center">
                         {m.is_result_confirmed
                           ? <Badge variant="success" className="text-[10px]">確定</Badge>
@@ -537,6 +540,15 @@ export default function ControlPage() {
                 <label className="text-sm font-medium">副審1</label>
                 <select value={editForm.sub_judge1_staff_id}
                   onChange={(e) => setEditForm((f) => f ? { ...f, sub_judge1_staff_id: e.target.value } : f)}
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary focus:outline-none">
+                  <option value="">未設定</option>
+                  {judgeStaffs.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">副審2</label>
+                <select value={editForm.sub_judge2_staff_id}
+                  onChange={(e) => setEditForm((f) => f ? { ...f, sub_judge2_staff_id: e.target.value } : f)}
                   className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary focus:outline-none">
                   <option value="">未設定</option>
                   {judgeStaffs.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}

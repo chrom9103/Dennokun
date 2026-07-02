@@ -15,6 +15,7 @@ async def get_all_matches(event_id: int) -> List[dict]:
                       m.aff_won, m.neg_won,
                       m.is_result_confirmed, m.is_result_public,
                       m.order_number_in_segment, m.note, m.name,
+                      m.main_judge_staff_id, m.sub_judge1_staff_id, m.sub_judge2_staff_id,
                       m.judges_assignment_count,
                       m.created_at, m.updated_at,
                       ts.name AS timetable_segment_name,
