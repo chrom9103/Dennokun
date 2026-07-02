@@ -21,7 +21,7 @@ const emptyVote = (idx: number): VotingDetail => ({
 
 function calcCommSum(vd: VotingDetail, side: "aff" | "neg"): number {
   return vd[`${side}_constructive_comm`] + vd[`${side}_question_comm`] + vd[`${side}_answer_comm`]
-    + vd[`${side}_first_rebuttal_comm`] + vd[`${side}_second_rebuttal_comm`];
+    + vd[`${side}_first_rebuttal_comm`] + vd[`${side}_second_rebuttal_comm`] - (side === "aff" ? (vd.aff_manner ?? 0) : (vd.neg_manner ?? 0));
 }
 
 function NumInput({
@@ -51,8 +51,6 @@ export default function MatchEditPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [votes, setVotes] = useState<VotingDetail[]>([emptyVote(0), emptyVote(1), emptyVote(2)]);
-  const [affManner, setAffManner] = useState(0);
-  const [negManner, setNegManner] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isConfirmed, setIsConfirmed] = useState(false);
@@ -65,8 +63,6 @@ export default function MatchEditPage() {
       const data = await fetchMatch(eventId, matchId);
       setMatch(data);
       setIsConfirmed(data.is_result_confirmed);
-      setAffManner(data.aff_manner ?? 0);
-      setNegManner(data.neg_manner ?? 0);
       if (data.voting_details && data.voting_details.length > 0) {
         setVotes(data.voting_details.map((vd, i) => ({ ...emptyVote(i), ...vd })));
       } else {
@@ -87,17 +83,25 @@ export default function MatchEditPage() {
     ...vd,
     aff_comm_sum: calcCommSum(vd, "aff"),
     neg_comm_sum: calcCommSum(vd, "neg"),
-    aff_won: calcCommSum(vd, "aff") > calcCommSum(vd, "neg") ? 1 : (calcCommSum(vd, "neg") > calcCommSum(vd, "aff") ? 0 : 0),
-    neg_won: calcCommSum(vd, "neg") > calcCommSum(vd, "aff") ? 1 : (calcCommSum(vd, "aff") > calcCommSum(vd, "neg") ? 0 : 0),
   }));
 
-  const totalAffVotes = syncedVotes.filter((v) => v.aff_comm_sum > v.neg_comm_sum).length;
-  const totalNegVotes = syncedVotes.filter((v) => v.neg_comm_sum > v.aff_comm_sum).length;
+  const totalAffVotes = syncedVotes.filter((v) => v.aff_won === 1).length;
+  const totalNegVotes = syncedVotes.filter((v) => v.neg_won === 1).length;
   const totalAffComm = syncedVotes.reduce((s, v) => s + v.aff_comm_sum, 0);
   const totalNegComm = syncedVotes.reduce((s, v) => s + v.neg_comm_sum, 0);
+  const totalAffManner = syncedVotes.reduce((s, v) => s + (v.aff_manner ?? 0), 0);
+  const totalNegManner = syncedVotes.reduce((s, v) => s + (v.neg_manner ?? 0), 0);
 
   function updateVote(idx: number, field: keyof VotingDetail, value: number | string | null) {
     setVotes((prev) => prev.map((v, i) => i === idx ? { ...v, [field]: value } : v));
+  }
+
+  function updateVoteTarget(idx: number, target: "aff" | "neg") {
+    setVotes((prev) => prev.map((v, i) => i === idx ? {
+      ...v,
+      aff_won: target === "aff" ? 1 : 0,
+      neg_won: target === "neg" ? 1 : 0,
+    } : v));
   }
 
   async function handleSave(confirm: boolean) {
@@ -109,8 +113,8 @@ export default function MatchEditPage() {
         neg_votes: totalNegVotes,
         aff_comm_sum: totalAffComm,
         neg_comm_sum: totalNegComm,
-        aff_manner: affManner,
-        neg_manner: negManner,
+        aff_manner: totalAffManner,
+        neg_manner: totalNegManner,
         is_result_confirmed: confirm,
         voting_details: syncedVotes,
       });
@@ -155,9 +159,10 @@ export default function MatchEditPage() {
   const commLabels = [
     { key: "constructive_comm", label: "立論" },
     { key: "question_comm", label: "質疑" },
-    { key: "answer_comm", label: "回答" },
+    { key: "answer_comm", label: "応答" },
     { key: "first_rebuttal_comm", label: "第一反駁" },
     { key: "second_rebuttal_comm", label: "第二反駁" },
+    { key: "manner", label: "マナー点(減点)" },
   ] as const;
 
   return (
@@ -208,34 +213,17 @@ export default function MatchEditPage() {
         <div className="bg-info-light/40 rounded-xl p-5 text-center border border-info-light">
           <p className="text-xs text-muted-foreground mb-1">肯定側 (Affirmative)</p>
           <p className="text-2xl font-bold text-primary">{affName}</p>
-          <div className="mt-3 grid grid-cols-3 text-center gap-2">
+          <div className="mt-3 grid grid-cols-2 text-center gap-2">
             <div><p className="text-xs text-muted-foreground">投票数</p><p className="text-3xl font-bold text-primary">{totalAffVotes}</p></div>
             <div><p className="text-xs text-muted-foreground">コミュ合計</p><p className="text-xl font-semibold">{totalAffComm}</p></div>
-            <div><p className="text-xs text-muted-foreground">マナー</p><p className="text-xl font-semibold">{affManner}</p></div>
           </div>
         </div>
         <div className="bg-pink-50 rounded-xl p-5 text-center border border-pink-200">
           <p className="text-xs text-muted-foreground mb-1">否定側 (Negative)</p>
           <p className="text-2xl font-bold text-pink-700">{negName}</p>
-          <div className="mt-3 grid grid-cols-3 text-center gap-2">
+          <div className="mt-3 grid grid-cols-2 text-center gap-2">
             <div><p className="text-xs text-muted-foreground">投票数</p><p className="text-3xl font-bold text-pink-700">{totalNegVotes}</p></div>
             <div><p className="text-xs text-muted-foreground">コミュ合計</p><p className="text-xl font-semibold">{totalNegComm}</p></div>
-            <div><p className="text-xs text-muted-foreground">マナー</p><p className="text-xl font-semibold">{negManner}</p></div>
-          </div>
-        </div>
-      </div>
-
-      {/* Manner input */}
-      <div className="bg-white rounded-xl shadow-sm border border-border p-6">
-        <h3 className="font-semibold mb-4">マナー点</h3>
-        <div className="grid grid-cols-2 gap-6">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium w-28 text-primary">{affName}</span>
-            <NumInput value={affManner} onChange={setAffManner} />
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium w-28 text-pink-700">{negName}</span>
-            <NumInput value={negManner} onChange={setNegManner} />
           </div>
         </div>
       </div>
@@ -247,18 +235,31 @@ export default function MatchEditPage() {
           {votes.map((vd, idx) => {
             const affSum = calcCommSum(vd, "aff");
             const negSum = calcCommSum(vd, "neg");
-            const winner = affSum > negSum ? "aff" : negSum > affSum ? "neg" : null;
             return (
               <div key={idx} className="border border-border rounded-xl overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 bg-secondary">
                   <p className="text-sm font-semibold">ジャッジ {idx + 1}</p>
-                  <div className="flex items-center gap-2">
-                    {winner === "aff" && <Badge variant="info" className="text-[11px]">Aff 勝利</Badge>}
-                    {winner === "neg" && <Badge variant="outline" className="text-[11px] border-pink-300 text-pink-700">Neg 勝利</Badge>}
-                    {!winner && affSum > 0 && <Badge variant="outline" className="text-[11px]">引き分け</Badge>}
-                  </div>
                 </div>
                 <div className="p-4">
+                  <div className="mb-4 flex flex-wrap items-center gap-3">
+                    <label className="text-sm font-medium text-muted-foreground">投票先</label>
+                    <div className="inline-flex rounded-full border border-border bg-secondary/60 p-1">
+                      <button
+                        type="button"
+                        onClick={() => updateVoteTarget(idx, "aff")}
+                        className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${vd.aff_won === 1 ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                      >
+                        肯定側
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateVoteTarget(idx, "neg")}
+                        className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${vd.neg_won === 1 ? "bg-pink-700 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                      >
+                        否定側
+                      </button>
+                    </div>
+                  </div>
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-border">
@@ -272,16 +273,30 @@ export default function MatchEditPage() {
                         <tr key={key} className="border-b border-border/50 last:border-0">
                           <td className="py-2 text-muted-foreground">{label}</td>
                           <td className="py-2 text-center">
-                            <NumInput
-                              value={vd[`aff_${key}` as keyof VotingDetail] as number}
-                              onChange={(v) => updateVote(idx, `aff_${key}` as keyof VotingDetail, v)}
-                            />
+                            {key === "manner" ? (
+                              <NumInput
+                                value={vd.aff_manner ?? 0}
+                                onChange={(v) => updateVote(idx, "aff_manner", v)}
+                              />
+                            ) : (
+                              <NumInput
+                                value={vd[`aff_${key}` as keyof VotingDetail] as number}
+                                onChange={(v) => updateVote(idx, `aff_${key}` as keyof VotingDetail, v)}
+                              />
+                            )}
                           </td>
                           <td className="py-2 text-center">
-                            <NumInput
-                              value={vd[`neg_${key}` as keyof VotingDetail] as number}
-                              onChange={(v) => updateVote(idx, `neg_${key}` as keyof VotingDetail, v)}
-                            />
+                            {key === "manner" ? (
+                              <NumInput
+                                value={vd.neg_manner ?? 0}
+                                onChange={(v) => updateVote(idx, "neg_manner", v)}
+                              />
+                            ) : (
+                              <NumInput
+                                value={vd[`neg_${key}` as keyof VotingDetail] as number}
+                                onChange={(v) => updateVote(idx, `neg_${key}` as keyof VotingDetail, v)}
+                              />
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -304,25 +319,6 @@ export default function MatchEditPage() {
               </div>
             );
           })}
-        </div>
-      </div>
-
-      {/* Result summary */}
-      <div className="bg-white rounded-xl shadow-sm border border-border p-6">
-        <h3 className="font-semibold mb-4">集計結果</h3>
-        <div className="grid grid-cols-2 gap-4">
-          <div className={`rounded-xl p-5 text-center ${totalAffVotes > totalNegVotes ? "bg-primary text-white" : "bg-muted"}`}>
-            <p className="text-sm opacity-80 mb-1">{affName}</p>
-            <p className="text-5xl font-bold">{totalAffVotes}</p>
-            <p className="text-sm opacity-80 mt-1">票</p>
-            {totalAffVotes > totalNegVotes && <Badge className="mt-2 bg-white/20 text-white border-0 text-xs">勝利</Badge>}
-          </div>
-          <div className={`rounded-xl p-5 text-center ${totalNegVotes > totalAffVotes ? "bg-pink-700 text-white" : "bg-muted"}`}>
-            <p className="text-sm opacity-80 mb-1">{negName}</p>
-            <p className="text-5xl font-bold">{totalNegVotes}</p>
-            <p className="text-sm opacity-80 mt-1">票</p>
-            {totalNegVotes > totalAffVotes && <Badge className="mt-2 bg-white/20 text-white border-0 text-xs">勝利</Badge>}
-          </div>
         </div>
       </div>
 
