@@ -170,11 +170,11 @@ async def assign_judges_endpoint(event_id: int, req: AssignJudgesRequest):
                 detail="スタッフが登録されていません。先にスタッフを登録してください。"
             )
 
-        judge_staffs = [s for s in staffs if s.get("can_be_main_judge") or s.get("can_be_sub_judge")]
+        judge_staffs = [s for s in staffs if s.get("can_be_main_judge") or s.get("can_be_sub_judge") or s.get("can_be_timekeeper")]
         if not judge_staffs:
             raise HTTPException(
                 status_code=422,
-                detail="ジャッジ担当可能なスタッフ（主審・副審の資格持ち）が登録されていません。"
+                detail="ジャッジまたは司会担当可能なスタッフが登録されていません。"
             )
 
         # 既存の試合データを基にジャッジを割り当てる
