@@ -235,10 +235,20 @@ export default function MatchEditPage() {
           {votes.map((vd, idx) => {
             const affSum = calcCommSum(vd, "aff");
             const negSum = calcCommSum(vd, "neg");
+            
+            let judgeLabel = `ジャッジ ${idx + 1}`;
+            if (idx === 0) {
+              judgeLabel = match?.main_judge_name ? `主審(${match.main_judge_name})` : "主審";
+            } else if (idx === 1) {
+              judgeLabel = match?.sub_judge1_name ? `副審1(${match.sub_judge1_name})` : "副審1";
+            } else if (idx === 2) {
+              judgeLabel = match?.sub_judge2_name ? `副審2(${match.sub_judge2_name})` : "副審2";
+            }
+
             return (
               <div key={idx} className="border border-border rounded-xl overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 bg-secondary">
-                  <p className="text-sm font-semibold">ジャッジ {idx + 1}</p>
+                  <p className="text-sm font-semibold">{judgeLabel}</p>
                 </div>
                 <div className="p-4">
                   <div className="mb-4 flex flex-wrap items-center gap-3">

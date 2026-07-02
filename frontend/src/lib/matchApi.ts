@@ -109,6 +109,8 @@ export interface MatchDetail extends MatchListItem {
   sub_judge1_staff_id: number | null;
   sub_judge2_staff_id: number | null;
   main_judge_name: string | null;
+  sub_judge1_name: string | null;
+  sub_judge2_name: string | null;
   start_time: string | null;
   end_time: string | null;
   voting_details: VotingDetail[];

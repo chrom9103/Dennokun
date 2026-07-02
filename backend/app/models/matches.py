@@ -92,6 +92,8 @@ class MatchDetail(MatchListItem):
     is_staffs_fixed: bool = False
     main_judge_staff_id: Optional[int] = None
     main_judge_name: Optional[str] = None
+    sub_judge1_name: Optional[str] = None
+    sub_judge2_name: Optional[str] = None
     start_time: Optional[str] = None
     end_time: Optional[str] = None
     voting_details: List[Any] = []
