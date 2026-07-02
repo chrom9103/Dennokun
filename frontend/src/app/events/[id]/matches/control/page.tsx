@@ -305,328 +305,305 @@ export default function ControlPage() {
         </div>
       )}
 
-      {/* Generation + Status 2-column layout */}
+      {/* Generation layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="space-y-6">
-          {/* Match Generation Card */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-lg bg-primary/10"><Icon name="sports" size={20} className="text-primary" /></div>
-                <div>
-                  <h3 className="font-semibold">試合の組み合わせ生成</h3>
-                  <p className="text-xs text-muted-foreground">チームや時間枠情報から対戦ペアと会場スロットを自動生成します</p>
-                </div>
+        {/* Match Generation Card */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-primary/10"><Icon name="sports" size={20} className="text-primary" /></div>
+              <div>
+                <h3 className="font-semibold">試合の組み合わせ生成</h3>
+                <p className="text-xs text-muted-foreground">チームや時間枠情報から対戦ペアと会場スロットを自動生成します</p>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Parallel matches per segment input list */}
-              <div className="space-y-3">
-                <label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider block">各枠の並行試合数設定</label>
-                <div className="border border-border rounded-xl p-3.5 space-y-3 bg-secondary/10 max-h-60 overflow-y-auto">
-                  {segments.map((seg) => (
-                    <div key={seg.id} className="flex items-center justify-between py-1 border-b border-border/40 last:border-0 last:pb-0">
-                      <div>
-                        <p className="text-sm font-medium">{seg.name}</p>
-                        {seg.start_time && <p className="text-xs text-muted-foreground">{seg.start_time}開始</p>}
-                      </div>
-                      <div className="flex items-center gap-1 bg-white border border-border rounded-lg p-0.5 shadow-sm">
-                        <button
-                          type="button"
-                          onClick={() => setParallelMatches((prev) => ({ ...prev, [seg.id]: Math.max(0, (prev[seg.id] || 0) - 1) }))}
-                          className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          min={0}
-                          max={rooms.length || 10}
-                          value={parallelMatches[seg.id] ?? 0}
-                          onChange={(e) => {
-                            const val = Math.max(0, parseInt(e.target.value) || 0);
-                            setParallelMatches((prev) => ({ ...prev, [seg.id]: val }));
-                          }}
-                          className="w-8 text-center text-sm font-semibold focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setParallelMatches((prev) => ({ ...prev, [seg.id]: Math.min(rooms.length || 10, (prev[seg.id] || 0) + 1) }))}
-                          className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
-                        >
-                          +
-                        </button>
-                      </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Parallel matches per segment input list */}
+            <div className="space-y-3">
+              <label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider block">各枠の並行試合数設定</label>
+              <div className="border border-border rounded-xl p-3.5 space-y-3 bg-secondary/10 max-h-60 overflow-y-auto">
+                {segments.map((seg) => (
+                  <div key={seg.id} className="flex items-center justify-between py-1 border-b border-border/40 last:border-0 last:pb-0">
+                    <div>
+                      <p className="text-sm font-medium">{seg.name}</p>
+                      {seg.start_time && <p className="text-xs text-muted-foreground">{seg.start_time}開始</p>}
                     </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Options */}
-              <div className="space-y-2 border border-border rounded-lg p-3">
-                <label className="flex items-start gap-3 cursor-pointer group hover:bg-muted/30 p-1.5 rounded-lg">
-                  <input type="checkbox" className="mt-0.5 w-4 h-4 accent-primary rounded"
-                    checked={genForm.overwrite} onChange={(e) => setGenForm((f) => ({ ...f, overwrite: e.target.checked }))} />
-                  <div>
-                    <p className="text-sm font-medium text-destructive">既存試合を削除して再生成</p>
-                    <p className="text-xs text-muted-foreground">現在の試合をすべて削除してから生成します</p>
+                    <div className="flex items-center gap-1 bg-white border border-border rounded-lg p-0.5 shadow-sm">
+                      <button
+                        type="button"
+                        onClick={() => setParallelMatches((prev) => ({ ...prev, [seg.id]: Math.max(0, (prev[seg.id] || 0) - 1) }))}
+                        className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min={0}
+                        max={rooms.length || 10}
+                        value={parallelMatches[seg.id] ?? 0}
+                        onChange={(e) => {
+                          const val = Math.max(0, parseInt(e.target.value) || 0);
+                          setParallelMatches((prev) => ({ ...prev, [seg.id]: val }));
+                        }}
+                        className="w-8 text-center text-sm font-semibold focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setParallelMatches((prev) => ({ ...prev, [seg.id]: Math.min(rooms.length || 10, (prev[seg.id] || 0) + 1) }))}
+                        className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
-                </label>
-              </div>
-
-              {/* Match Generation chips */}
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { label: `${teams.length}チーム`, icon: "groups", ok: teams.length > 1 },
-                  { label: `${segments.length}時間枠`, icon: "schedule", ok: segments.length > 0 },
-                  { label: `${rooms.length}会場`, icon: "meeting_room", ok: rooms.length > 0 },
-                ].map(({ label, icon, ok }) => (
-                  <span key={label} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${ok ? "border-green-200 bg-green-50 text-green-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
-                    <Icon name={ok ? "check_circle" : "warning"} size={13} />
-                    {label}
-                  </span>
                 ))}
               </div>
+            </div>
 
-              <Button
-                className="w-full"
-                onClick={handleGenerate}
-                loading={generating}
-                disabled={teams.length < 2}
-              >
-                <Icon name="auto_awesome" size={18} />
-                <span className="ml-2">{generating ? "生成中..." : "試合の組み合わせを生成"}</span>
-              </Button>
-              {teams.length < 2 && (
-                <p className="text-xs text-center text-muted-foreground">
-                  チームを2チーム以上登録すると生成できます
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Judge Assignment Card */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-lg bg-amber-500/10"><Icon name="gavel" size={20} className="text-amber-600" /></div>
+            {/* Options */}
+            <div className="space-y-2 border border-border rounded-lg p-3">
+              <label className="flex items-start gap-3 cursor-pointer group hover:bg-muted/30 p-1.5 rounded-lg">
+                <input type="checkbox" className="mt-0.5 w-4 h-4 accent-primary rounded"
+                  checked={genForm.overwrite} onChange={(e) => setGenForm((f) => ({ ...f, overwrite: e.target.checked }))} />
                 <div>
-                  <h3 className="font-semibold">審判（ジャッジ）の自動割当</h3>
-                  <p className="text-xs text-muted-foreground">登録済みの試合に対して、利害関係を考慮し審判を自動で割り当てます</p>
+                  <p className="text-sm font-medium text-destructive">既存試合を削除して再生成</p>
+                  <p className="text-xs text-muted-foreground">現在の試合をすべて削除してから生成します</p>
                 </div>
+              </label>
+            </div>
+
+            {/* Match Generation chips */}
+            <div className="flex flex-wrap gap-2">
+              {[
+                { label: `${teams.length}チーム`, icon: "groups", ok: teams.length > 1 },
+                { label: `${segments.length}時間枠`, icon: "schedule", ok: segments.length > 0 },
+                { label: `${rooms.length}会場`, icon: "meeting_room", ok: rooms.length > 0 },
+              ].map(({ label, icon, ok }) => (
+                <span key={label} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${ok ? "border-green-200 bg-green-50 text-green-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+                  <Icon name={ok ? "check_circle" : "warning"} size={13} />
+                  {label}
+                </span>
+              ))}
+            </div>
+
+            <Button
+              className="w-full"
+              onClick={handleGenerate}
+              loading={generating}
+              disabled={teams.length < 2}
+            >
+              <Icon name="auto_awesome" size={18} />
+              <span className="ml-2">{generating ? "生成中..." : "試合の組み合わせを生成"}</span>
+            </Button>
+            {teams.length < 2 && (
+              <p className="text-xs text-center text-muted-foreground">
+                チームを2チーム以上登録すると生成できます
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Judge Assignment Card */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-amber-500/10"><Icon name="gavel" size={20} className="text-amber-600" /></div>
+              <div>
+                <h3 className="font-semibold">審判（ジャッジ）の自動割当</h3>
+                <p className="text-xs text-muted-foreground">登録済みの試合に対して、利害関係を考慮し審判を自動で割り当てます</p>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Judge counts per segment input list */}
-              <div className="space-y-3">
-                <label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider block">各枠の1試合あたりジャッジ数設定</label>
-                <div className="border border-border rounded-xl p-3.5 space-y-3 bg-secondary/10 max-h-60 overflow-y-auto">
-                  {segments.map((seg) => (
-                    <div key={seg.id} className="flex items-center justify-between py-1 border-b border-border/40 last:border-0 last:pb-0">
-                      <div>
-                        <p className="text-sm font-medium">{seg.name}</p>
-                        {seg.start_time && <p className="text-xs text-muted-foreground">{seg.start_time}開始</p>}
-                      </div>
-                      <div className="flex items-center gap-1 bg-white border border-border rounded-lg p-0.5 shadow-sm">
-                        <button
-                          type="button"
-                          onClick={() => setSegmentJudgeCounts((prev) => ({ ...prev, [seg.id]: Math.max(1, (prev[seg.id] || 3) - 1) }))}
-                          className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          min={1}
-                          max={5}
-                          value={segmentJudgeCounts[seg.id] ?? 3}
-                          onChange={(e) => {
-                            const val = Math.max(1, Math.min(5, parseInt(e.target.value) || 3));
-                            setSegmentJudgeCounts((prev) => ({ ...prev, [seg.id]: val }));
-                          }}
-                          className="w-8 text-center text-sm font-semibold focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setSegmentJudgeCounts((prev) => ({ ...prev, [seg.id]: Math.min(5, (prev[seg.id] || 3) + 1) }))}
-                          className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
-                        >
-                          +
-                        </button>
-                      </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Judge counts per segment input list */}
+            <div className="space-y-3">
+              <label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider block">各枠の1試合あたりジャッジ数設定</label>
+              <div className="border border-border rounded-xl p-3.5 space-y-3 bg-secondary/10 max-h-60 overflow-y-auto">
+                {segments.map((seg) => (
+                  <div key={seg.id} className="flex items-center justify-between py-1 border-b border-border/40 last:border-0 last:pb-0">
+                    <div>
+                      <p className="text-sm font-medium">{seg.name}</p>
+                      {seg.start_time && <p className="text-xs text-muted-foreground">{seg.start_time}開始</p>}
                     </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { label: `${matches.length}試合`, icon: "sports", ok: matches.length > 0 },
-                  { label: `${staffs.filter(s => s.can_be_main_judge || s.can_be_sub_judge).length}名のジャッジ資格スタッフ`, icon: "badge", ok: staffs.filter(s => s.can_be_main_judge || s.can_be_sub_judge).length > 0 },
-                ].map(({ label, icon, ok }) => (
-                  <span key={label} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${ok ? "border-green-200 bg-green-50 text-green-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
-                    <Icon name={ok ? "check_circle" : "warning"} size={13} />
-                    {label}
-                  </span>
+                    <div className="flex items-center gap-1 bg-white border border-border rounded-lg p-0.5 shadow-sm">
+                      <button
+                        type="button"
+                        onClick={() => setSegmentJudgeCounts((prev) => ({ ...prev, [seg.id]: Math.max(1, (prev[seg.id] || 3) - 1) }))}
+                        className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min={1}
+                        max={5}
+                        value={segmentJudgeCounts[seg.id] ?? 3}
+                        onChange={(e) => {
+                          const val = Math.max(1, Math.min(5, parseInt(e.target.value) || 3));
+                          setSegmentJudgeCounts((prev) => ({ ...prev, [seg.id]: val }));
+                        }}
+                        className="w-8 text-center text-sm font-semibold focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setSegmentJudgeCounts((prev) => ({ ...prev, [seg.id]: Math.min(5, (prev[seg.id] || 3) + 1) }))}
+                        className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
                 ))}
               </div>
+            </div>
 
-              <Button
-                className="w-full"
-                onClick={handleAssignJudges}
-                loading={assigningJudges}
-                disabled={matches.length === 0 || staffs.filter(s => s.can_be_main_judge || s.can_be_sub_judge).length === 0}
-              >
-                <Icon name="auto_awesome" size={18} />
-                <span className="ml-2">{assigningJudges ? "割り当て中..." : "審判の割り当てを自動生成"}</span>
-              </Button>
-              {matches.length === 0 && (
-                <p className="text-xs text-center text-muted-foreground">
-                  先に試合の組み合わせを生成してください
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { label: `${matches.length}試合`, icon: "sports", ok: matches.length > 0 },
+                { label: `${staffs.filter(s => s.can_be_main_judge || s.can_be_sub_judge).length}名のジャッジ資格スタッフ`, icon: "badge", ok: staffs.filter(s => s.can_be_main_judge || s.can_be_sub_judge).length > 0 },
+              ].map(({ label, icon, ok }) => (
+                <span key={label} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${ok ? "border-green-200 bg-green-50 text-green-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+                  <Icon name={ok ? "check_circle" : "warning"} size={13} />
+                  {label}
+                </span>
+              ))}
+            </div>
 
-        {/* Status panel */}
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            {[
-              { label: "総試合数", value: summary.total, icon: "sports", color: "text-primary bg-blue-50" },
-              { label: "確定済み", value: summary.confirmed, icon: "check_circle", color: "text-green-700 bg-green-50" },
-              { label: "未入力", value: summary.total - summary.confirmed, icon: "pending_actions", color: "text-amber-700 bg-amber-50" },
-              { label: "チーム数", value: teams.length, icon: "groups", color: "text-purple-700 bg-purple-50" },
-            ].map(({ label, value, icon, color }) => (
-              <div key={label} className="bg-white rounded-xl border border-border p-4 flex items-center gap-3 shadow-sm">
-                <div className={`p-2 rounded-lg ${color.split(" ")[1]}`}>
-                  <Icon name={icon} size={20} className={color.split(" ")[0]} />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">{label}</p>
-                  <p className="text-2xl font-bold">{value}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold text-sm">クイックアクション</h3>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button variant="secondary" className="w-full justify-start" onClick={() => router.push(`/events/${eventId}/matches/board`)}>
-                <Icon name="view_list" size={18} />
-                <span className="ml-2">進行ボードで確認</span>
-              </Button>
-              <Button variant="secondary" className="w-full justify-start" onClick={() => router.push(`/events/${eventId}/reports/standings`)}>
-                <Icon name="leaderboard" size={18} />
-                <span className="ml-2">現在の順位表</span>
-              </Button>
-              <Button variant="secondary" className="w-full justify-start" onClick={() => router.push(`/events/${eventId}/master/teams`)}>
-                <Icon name="groups" size={18} />
-                <span className="ml-2">チーム管理</span>
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+            <Button
+              className="w-full"
+              onClick={handleAssignJudges}
+              loading={assigningJudges}
+              disabled={matches.length === 0 || staffs.filter(s => s.can_be_main_judge || s.can_be_sub_judge).length === 0}
+            >
+              <Icon name="auto_awesome" size={18} />
+              <span className="ml-2">{assigningJudges ? "割り当て中..." : "審判の割り当てを自動生成"}</span>
+            </Button>
+            {matches.length === 0 && (
+              <p className="text-xs text-center text-muted-foreground">
+                先に試合の組み合わせを生成してください
+              </p>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* Match list */}
-      <Card>
-        <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 border border-border rounded-xl shadow-sm">
           <div className="flex items-center gap-2">
-            <h3 className="font-semibold">生成済み試合一覧</h3>
-            <Badge variant="outline">{matches.length} 試合</Badge>
+            <h3 className="font-bold text-lg text-foreground">生成済み試合一覧</h3>
+            <Badge variant="secondary" className="px-2.5 py-0.5">{matches.length} 試合</Badge>
           </div>
           <div className="flex gap-2 flex-wrap">
             <select value={fSegment} onChange={(e) => setFSegment(e.target.value)}
-              className="px-3 py-1.5 rounded-lg border border-border bg-white text-sm focus:outline-none">
+              className="px-3 py-1.5 rounded-lg border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/20">
               <option value="all">すべての時間枠</option>
               {uniqueSegments.map(([id, name]) => <option key={id} value={String(id)}>{name}</option>)}
             </select>
             <select value={fSection} onChange={(e) => setFSection(e.target.value)}
-              className="px-3 py-1.5 rounded-lg border border-border bg-white text-sm focus:outline-none">
+              className="px-3 py-1.5 rounded-lg border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/20">
               <option value="all">すべての部門</option>
               {uniqueSections.map(([id, name]) => <option key={id} value={String(id)}>{name}</option>)}
             </select>
           </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table className="border-none rounded-none">
-            <TableHeader>
-              <TableRow hover={false}>
-                <TableHead>時間枠</TableHead>
-                <TableHead>会場</TableHead>
-                <TableHead>部門</TableHead>
-                <TableHead>肯定側</TableHead>
-                <TableHead align="center">VS</TableHead>
-                <TableHead>否定側</TableHead>
-                <TableHead>審判</TableHead>
-                <TableHead align="center">状態</TableHead>
-                <TableHead align="right">微調整</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow hover={false}>
-                  <TableCell colSpan={9} className="py-16 text-center text-muted-foreground">
-                    <span className="flex items-center justify-center gap-2">
-                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                      読み込み中...
-                    </span>
-                  </TableCell>
-                </TableRow>
-              ) : filteredMatches.length === 0 ? (
-                <TableRow hover={false}>
-                  <TableCell colSpan={9} className="py-20 text-center text-muted-foreground">
-                    <div className="flex flex-col items-center gap-2">
-                      <Icon name="sports_score" size={44} className="opacity-20" />
-                      <p>試合が生成されていません</p>
-                      <p className="text-xs">左の「試合を自動生成」ボタンで生成を開始してください</p>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredMatches.map((m) => {
-                  const mainJudge = staffs.find((s) => s.id === (m as any).main_judge_staff_id);
-                  const subJudge1 = staffs.find((s) => s.id === (m as any).sub_judge1_staff_id);
-                  const subJudge2 = staffs.find((s) => s.id === (m as any).sub_judge2_staff_id);
-                  const judgeLabel = [mainJudge?.name, subJudge1?.name, subJudge2?.name].filter(Boolean).join(" / ");
-                  return (
-                    <TableRow key={m.id}>
-                      <TableCell className="text-sm">{m.timetable_segment_name ?? <span className="text-muted-foreground italic text-xs">未割当</span>}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{m.room_name ?? <span className="italic text-xs">未割当</span>}</TableCell>
-                      <TableCell>
-                        {m.section_name
-                          ? <Badge variant="outline" className="text-[10px] border-primary/30 text-primary">{m.section_name}</Badge>
-                          : null}
-                      </TableCell>
-                      <TableCell className="font-medium">{m.aff_team_name ?? <span className="text-muted-foreground text-xs">-</span>}</TableCell>
-                      <TableCell align="center"><span className="text-muted-foreground font-bold text-xs">VS</span></TableCell>
-                      <TableCell className="font-medium">{m.neg_team_name ?? <span className="text-muted-foreground text-xs">-</span>}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{judgeLabel || "-"}</TableCell>
-                      <TableCell align="center">
-                        {m.is_result_confirmed
-                          ? <Badge variant="success" className="text-[10px]">確定</Badge>
-                          : <Badge variant="outline" className="text-[10px]">未入力</Badge>}
-                      </TableCell>
-                      <TableCell align="right">
-                        <Button variant="ghost" size="sm" className="p-1.5 h-auto rounded-full text-primary" onClick={() => openEdit(m)}>
-                          <Icon name="tune" size={18} />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+        </div>
+
+        {loading ? (
+          <Card>
+            <CardContent className="py-16 text-center text-muted-foreground">
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                読み込み中...
+              </span>
+            </CardContent>
+          </Card>
+        ) : filteredMatches.length === 0 ? (
+          <Card>
+            <CardContent className="py-20 text-center text-muted-foreground">
+              <div className="flex flex-col items-center gap-2">
+                <Icon name="sports_score" size={44} className="opacity-20" />
+                <p className="font-medium text-sm">試合が生成されていません</p>
+                <p className="text-xs">上の「試合の組み合わせ生成」ボタンで生成を開始してください</p>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          segments
+            .map((seg) => {
+              const segMatches = filteredMatches.filter((m) => m.event_timetable_segment_id === seg.id);
+              return { seg, matches: segMatches };
+            })
+            .filter((item) => item.matches.length > 0)
+            .map(({ seg, matches: segMatches }) => (
+              <Card key={seg.id} className="overflow-hidden border-border/80 shadow-sm">
+                <CardHeader className="bg-muted/30 border-b border-border/60 py-3 flex flex-row items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-1 rounded bg-secondary/80 text-muted-foreground"><Icon name="schedule" size={16} /></div>
+                    <span className="font-bold text-sm text-foreground">{seg.name}</span>
+                    {seg.start_time && (
+                      <span className="text-xs text-muted-foreground bg-white px-2 py-0.5 border border-border rounded-full font-medium">
+                        {seg.start_time}〜
+                      </span>
+                    )}
+                  </div>
+                  <Badge variant="outline" className="bg-white border-border/80 text-xs font-semibold">{segMatches.length} 試合</Badge>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <Table className="border-none rounded-none">
+                    <TableHeader>
+                      <TableRow hover={false}>
+                        <TableHead className="pl-4">会場</TableHead>
+                        <TableHead>部門</TableHead>
+                        <TableHead>肯定側</TableHead>
+                        <TableHead align="center" className="text-center w-12">VS</TableHead>
+                        <TableHead>否定側</TableHead>
+                        <TableHead>審判</TableHead>
+                        <TableHead align="center" className="text-center w-20">状態</TableHead>
+                        <TableHead align="right" className="pr-4 text-right w-16">微調整</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {segMatches.map((m) => {
+                        const mainJudge = staffs.find((s) => s.id === (m as any).main_judge_staff_id);
+                        const subJudge1 = staffs.find((s) => s.id === (m as any).sub_judge1_staff_id);
+                        const subJudge2 = staffs.find((s) => s.id === (m as any).sub_judge2_staff_id);
+                        const judgeLabel = [mainJudge?.name, subJudge1?.name, subJudge2?.name].filter(Boolean).join(" / ");
+                        return (
+                          <TableRow key={m.id}>
+                            <TableCell className="text-sm font-medium pl-4">{m.room_name ?? <span className="italic text-xs text-muted-foreground">未割当</span>}</TableCell>
+                            <TableCell>
+                              {m.section_name
+                                ? <Badge variant="outline" className="text-[10px] border-primary/30 text-primary font-medium">{m.section_name}</Badge>
+                                : null}
+                            </TableCell>
+                            <TableCell className="font-semibold text-sm">{m.aff_team_name ?? <span className="text-muted-foreground text-xs">-</span>}</TableCell>
+                            <TableCell align="center" className="text-center font-bold text-xs text-muted-foreground/60 w-12">VS</TableCell>
+                            <TableCell className="font-semibold text-sm">{m.neg_team_name ?? <span className="text-muted-foreground text-xs">-</span>}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground font-medium">{judgeLabel || "-"}</TableCell>
+                            <TableCell align="center" className="text-center w-20">
+                              {m.is_result_confirmed
+                                ? <Badge variant="success" className="text-[10px] font-semibold">確定</Badge>
+                                : <Badge variant="outline" className="text-[10px] font-medium">未入力</Badge>}
+                            </TableCell>
+                            <TableCell align="right" className="pr-4 text-right w-16">
+                              <Button variant="ghost" size="sm" className="p-1.5 h-auto rounded-full text-primary hover:bg-primary/5 active:scale-95" onClick={() => openEdit(m)}>
+                                <Icon name="tune" size={18} />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            ))
+        )}
+      </div>
 
       {/* Delete confirm */}
       <Modal isOpen={showDeleteConfirm} onClose={() => setShowDeleteConfirm(false)} title="全試合を削除"
