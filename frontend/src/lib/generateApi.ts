@@ -94,8 +94,12 @@ export async function fetchDashboardSummary(eventId: number): Promise<DashboardS
   return apiFetch(`/api/events/${eventId}/dashboard-summary`);
 }
 
-export async function assignJudges(eventId: number): Promise<{ status: string; updated_count: number }> {
+export async function assignJudges(
+  eventId: number,
+  segmentJudgeCounts: Record<number, number>
+): Promise<{ status: string; updated_count: number }> {
   return apiFetch(`/api/events/${eventId}/assign-judges`, {
     method: "POST",
+    body: JSON.stringify({ segment_judge_counts: segmentJudgeCounts }),
   });
 }

@@ -9,6 +9,7 @@ from app.models.generate import (
     GenerateMatchesResponse,
     MatchAssignmentUpdate,
     DashboardSummary,
+    AssignJudgesRequest,
 )
 from app.models.matches import MatchDetail
 
@@ -144,7 +145,7 @@ async def update_match_assignment(event_id: int, match_id: int, data: MatchAssig
 
 
 @router.post("/assign-judges")
-async def assign_judges_endpoint(event_id: int):
+async def assign_judges_endpoint(event_id: int, req: AssignJudgesRequest):
     """既存の全試合に対して、スタッフ情報・利害関係・担当可能枠からジャッジを自動割り当て・更新する。"""
     try:
         from app.core.handle_db.matches import get_all_matches
@@ -181,7 +182,7 @@ async def assign_judges_endpoint(event_id: int):
             matches=matches,
             staffs=judge_staffs,
             teams=teams,
-            judges_per_match=3, # デフォルト3名
+            judges_per_match=req.segment_judge_counts,
         )
 
         # 更新を保存

@@ -49,3 +49,9 @@ class DashboardSummary(BaseModel):
     total_staffs: int
     total_schools: int
     total_sections: int
+
+
+class AssignJudgesRequest(BaseModel):
+    """審判割り当てリクエスト。"""
+    segment_judge_counts: dict[int, int]  # key: segment_id, value: 各枠の1試合あたりのジャッジ数
+

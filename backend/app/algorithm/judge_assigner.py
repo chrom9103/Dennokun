@@ -56,6 +56,14 @@ def assign_judges(
         if seg_id not in segment_judge_used:
             segment_judge_used[seg_id] = set()
 
+        # Determine judges count for this segment dynamically
+        j_count = 3
+        if isinstance(judges_per_match, dict):
+            if seg_id is not None:
+                j_count = judges_per_match.get(seg_id, 3)
+        else:
+            j_count = judges_per_match
+
         # この試合に関係する学校IDを収集
         involved_school_ids: set[int] = set()
         for tid in [match.get("aff_team_id"), match.get("neg_team_id")]:
@@ -82,8 +90,8 @@ def assign_judges(
         else:
             match["main_judge_staff_id"] = None
 
-        # 2. 副審の選出 (judges_per_match - 1 人)
-        sub_judges_to_pick = max(0, judges_per_match - 1)
+        # 2. 副審の選出 (j_count - 1 人)
+        sub_judges_to_pick = max(0, j_count - 1)
         sub_judges = _pick_sub_judges(
             staffs=staffs,
             count=sub_judges_to_pick,

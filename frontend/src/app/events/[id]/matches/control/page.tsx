@@ -61,6 +61,8 @@ export default function ControlPage() {
 
   // Parallel matches per segment
   const [parallelMatches, setParallelMatches] = useState<Record<number, number>>({});
+  // Judge counts per segment
+  const [segmentJudgeCounts, setSegmentJudgeCounts] = useState<Record<number, number>>({});
   // Form options (overwrite, judges_per_match)
   const [genForm, setGenForm] = useState<GenForm>({
     rounds: 1,
@@ -120,6 +122,18 @@ export default function ControlPage() {
         return next;
       });
 
+      // Initialize judge counts per segment if not set
+      setSegmentJudgeCounts((prev) => {
+        const next = { ...prev };
+        segsData.forEach((s) => {
+          if (next[s.id] === undefined) {
+            next[s.id] = 3; // デフォルトジャッジ数3
+          }
+        });
+        return next;
+      });
+
+
     } catch (e) {
       setError(e instanceof Error ? e.message : "データの取得に失敗しました");
     } finally {
@@ -171,7 +185,7 @@ export default function ControlPage() {
     setJudgeResult(null);
     setError(null);
     try {
-      const result = await assignJudges(eventId);
+      const result = await assignJudges(eventId, segmentJudgeCounts);
       setJudgeResult(result);
       await load();
     } catch (e) {
@@ -403,12 +417,46 @@ export default function ControlPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">1試合あたりのジャッジ数</label>
-                <input type="number" min={1} max={5} value={genForm.judges_per_match}
-                  onChange={(e) => setGenForm((f) => ({ ...f, judges_per_match: parseInt(e.target.value) || 3 }))}
-                  className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary focus:outline-none"
-                />
+              {/* Judge counts per segment input list */}
+              <div className="space-y-3">
+                <label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider block">各枠の1試合あたりジャッジ数設定</label>
+                <div className="border border-border rounded-xl p-3.5 space-y-3 bg-secondary/10 max-h-60 overflow-y-auto">
+                  {segments.map((seg) => (
+                    <div key={seg.id} className="flex items-center justify-between py-1 border-b border-border/40 last:border-0 last:pb-0">
+                      <div>
+                        <p className="text-sm font-medium">{seg.name}</p>
+                        {seg.start_time && <p className="text-xs text-muted-foreground">{seg.start_time}開始</p>}
+                      </div>
+                      <div className="flex items-center gap-1 bg-white border border-border rounded-lg p-0.5 shadow-sm">
+                        <button
+                          type="button"
+                          onClick={() => setSegmentJudgeCounts((prev) => ({ ...prev, [seg.id]: Math.max(1, (prev[seg.id] || 3) - 1) }))}
+                          className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min={1}
+                          max={5}
+                          value={segmentJudgeCounts[seg.id] ?? 3}
+                          onChange={(e) => {
+                            const val = Math.max(1, Math.min(5, parseInt(e.target.value) || 3));
+                            setSegmentJudgeCounts((prev) => ({ ...prev, [seg.id]: val }));
+                          }}
+                          className="w-8 text-center text-sm font-semibold focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setSegmentJudgeCounts((prev) => ({ ...prev, [seg.id]: Math.min(5, (prev[seg.id] || 3) + 1) }))}
+                          className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-2">
