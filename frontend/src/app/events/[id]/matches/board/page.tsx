@@ -152,7 +152,7 @@ export default function BoardPage() {
                 <TableHead>否定側（Neg）</TableHead>
                 <TableHead align="center">結果</TableHead>
                 <TableHead align="center">状態</TableHead>
-                <TableHead align="right">操作</TableHead>
+                <TableHead align="center">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
