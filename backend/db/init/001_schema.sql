@@ -203,6 +203,7 @@ CREATE TABLE IF NOT EXISTS event_matches (
     neg_question_comm INTEGER,
     neg_answer_comm INTEGER,
     neg_first_rebuttal_comm INTEGER,
+    neg_second_rebuttal_comm INTEGER,
     aff_comm_sum INTEGER,
     neg_comm_sum INTEGER,
     aff_manner INTEGER,
