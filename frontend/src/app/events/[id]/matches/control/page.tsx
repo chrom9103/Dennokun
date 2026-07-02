@@ -142,6 +142,7 @@ export default function ControlPage() {
     }
   }, [eventId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   // Filter matches
@@ -325,7 +326,7 @@ export default function ControlPage() {
             {/* Parallel matches per segment input list */}
             <div className="space-y-3">
               <label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider block">各枠の並行試合数設定</label>
-              <div className="border border-border rounded-xl p-3.5 space-y-3 bg-secondary/10 max-h-60 overflow-y-auto">
+              <div className="border border-border rounded-xl p-3.5 space-y-3 bg-secondary/10">
                 {segments.map((seg) => (
                   <div key={seg.id} className="flex items-center justify-between py-1 border-b border-border/40 last:border-0 last:pb-0">
                     <div>
@@ -422,7 +423,7 @@ export default function ControlPage() {
             {/* Judge counts per segment input list */}
             <div className="space-y-3">
               <label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider block">各枠の1試合あたりジャッジ数設定</label>
-              <div className="border border-border rounded-xl p-3.5 space-y-3 bg-secondary/10 max-h-60 overflow-y-auto">
+              <div className="border border-border rounded-xl p-3.5 space-y-3 bg-secondary/10">
                 {segments.map((seg) => (
                   <div key={seg.id} className="flex items-center justify-between py-1 border-b border-border/40 last:border-0 last:pb-0">
                     <div>
