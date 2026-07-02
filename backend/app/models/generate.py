@@ -7,12 +7,8 @@ from pydantic import BaseModel
 
 class GenerateMatchesRequest(BaseModel):
     """試合生成リクエスト。"""
-    rounds: int = 1
-    judges_per_match: int = 3
-    use_groups: bool = True        # チームグループを使用するか（Falseなら部門単位）
-    assign_judges: bool = True     # ジャッジ自動割当を行うか
-    assign_slots: bool = True      # 時間枠・会場自動割当を行うか
-    overwrite: bool = False        # 既存試合を削除してから生成するか
+    segment_parallel_matches: dict[int, int]  # key: segment_id, value: 並行試合数
+    overwrite: bool = False                    # 既存試合を削除してから生成するか
 
 
 # ── Generation response ────────────────────────────────────────────────────────

@@ -1,108 +1,199 @@
 """
-match_generator.py — 対戦カード生成ロジック
-==============================================
+match_generator.py — スロットベース対戦カード生成ロジック
+=========================================================
 
 【現在の実装】
-  シンプルなラウンドロビン（総当たり）方式。
-  同一グループ内のチームを総当たりで対戦させる。
-  グループが設定されていない場合は部門内で総当たり。
+  時間枠ごとに設定された「並行試合数」に応じて、
+  登録されたチームから均等に対戦ペアを組んで会場スロットに割り当てる。
 
 【将来の最適化について】
   このファイルだけ差し替えれば、より高度な最適化（遺伝的アルゴリズム、
   線形計画法など）に移行できるよう設計している。
-  generate_match_pairs() の入出力インターフェースを維持すること。
+  generate_matches_by_slots() の入出力インターフェースを維持すること。
 
 【入力】
-  teams: list[dict]   — event_teams テーブルの行（id, event_section_id, team_group_id 必須）
-  rounds: int         — 実施するラウンド数
-  config: dict        — 将来の最適化パラメータ用（現在は未使用）
+  teams: list[dict]    — event_teams テーブルの行（id, event_section_id, event_school_id 必須）
+  segments: list[dict] — event_timetable_segments テーブルの行（id, order_number 必須）
+  rooms: list[dict]    — event_rooms テーブルの行（id, order_number 必須）
+  parallel_matches_map: dict[int, int] — 時間枠ID -> 並行試合数
 
 【出力】
   list[dict] with keys:
-    aff_team_id   : int — 肯定側チームID
-    neg_team_id   : int — 否定側チームID
-    event_section_id : int | None — 部門ID
-    round_number  : int — ラウンド番号（1始まり）
+    event_timetable_segment_id  : int — 時間枠ID
+    event_room_id               : int — 会場ID
+    event_section_id            : int — 部門ID
+    aff_team_id                 : int — 肯定側チームID
+    neg_team_id                 : int — 否定側チームID
+    order_number_in_segment     : int — セグメント内順序 (1始まり)
 """
 
 from __future__ import annotations
-from typing import Any
+import random
 
 
-def generate_match_pairs(
+def generate_matches_by_slots(
     teams: list[dict],
-    rounds: int = 1,
-    config: dict[str, Any] | None = None,  # noqa: ARG001 (reserved for future optimizer)
-) -> list[dict]:
+    segments: list[dict],
+    rooms: list[dict],
+    parallel_matches_map: dict[int, int],
+) -> tuple[list[dict], list[str]]:
     """
-    チームリストからラウンドロビン対戦ペアを生成して返す。
+    時間枠の並行試合数に基づいて、チームを対戦ペアに割り振り、会場スロットを割り当てる。
 
-    同一グループ（team_group_id）内で総当たり。
-    グループ未設定チームは同一部門（event_section_id）内で総当たり。
-    それも未設定の場合は全体で総当たり。
-
-    Returns: list of match-pair dicts (not yet saved to DB).
+    Returns: (generated_matches, warnings)
     """
-    # グループ優先 → 部門 → 全体 でチームをグルーピング
-    group_map: dict[tuple, list[dict]] = {}
+    warnings: list[str] = []
+    generated_matches: list[dict] = []
+
+    if not teams:
+        return [], ["チームが登録されていません。"]
+    if not segments:
+        return [], ["時間枠が登録されていません。"]
+    if not rooms:
+        return [], ["会場が登録されていません。"]
+
+    # チームごとの累計対戦数カウンター
+    team_match_count: dict[int, int] = {t["id"]: 0 for t in teams}
+    # これまでに対戦したペア履歴
+    played_pairs: set[tuple[int, int]] = set()
+
+    # ソートされた時間枠と会場
+    sorted_segments = sorted(segments, key=lambda s: s.get("order_number") or 0)
+    sorted_rooms = sorted(rooms, key=lambda r: r.get("order_number") or r["id"])
+
+    # 部門ごとにチームを分類（対戦は同じ部門同士）
+    section_teams: dict[int, list[dict]] = {}
     for team in teams:
-        group_key: tuple
-        if team.get("team_group_id") is not None:
-            group_key = ("group", team["team_group_id"])
-        elif team.get("event_section_id") is not None:
-            group_key = ("section", team["event_section_id"])
-        else:
-            group_key = ("all", 0)
-        group_map.setdefault(group_key, []).append(team)
+        sec_id = team.get("event_section_id")
+        if sec_id is not None:
+            section_teams.setdefault(sec_id, []).append(team)
 
-    pairs: list[dict] = []
-    for group_key, group_teams in group_map.items():
-        section_id = _extract_section_id(group_key, group_teams)
-        group_pairs = _round_robin_pairs(group_teams, rounds, section_id)
-        pairs.extend(group_pairs)
+    # 試合ごとのAff/Neg平準化用のカウンタ
+    flip_flag = False
 
-    return pairs
+    for seg in sorted_segments:
+        seg_id = seg["id"]
+        parallel_count = parallel_matches_map.get(seg_id, 0)
+        if parallel_count <= 0:
+            continue
+
+        # 会場数が足りない場合
+        if len(sorted_rooms) < parallel_count:
+            warnings.append(
+                f"時間枠「{seg['name']}」の並行試合数 {parallel_count} に対して、"
+                f"登録されている会場数 ({len(sorted_rooms)}) が不足しています。"
+                f"割り当て可能な {len(sorted_rooms)} 試合のみ生成します。"
+            )
+            parallel_count = len(sorted_rooms)
+
+        # この時間枠で対戦に使用する会場
+        used_rooms = sorted_rooms[:parallel_count]
+
+        # 部門ごとの利用可能チーム
+        seg_available_teams: dict[int, list[dict]] = {
+            sec_id: [t for t in sec_teams]
+            for sec_id, sec_teams in section_teams.items()
+        }
+
+        # この時間枠での対戦カードを生成
+        matches_in_seg = 0
+        order_in_seg = 1
+
+        # 会場スロット分だけ試合を組む
+        for room in used_rooms:
+            # 対戦可能ペアを探す
+            # 優先度:
+            # 1. 累計対戦数が最も少ない部門
+            # 2. その部門内で、累計対戦数が最も少ないチーム
+            best_pair = _find_best_pair(
+                seg_available_teams=seg_available_teams,
+                team_match_count=team_match_count,
+                played_pairs=played_pairs,
+            )
+
+            if not best_pair:
+                # ペアが組めない場合（その時間枠で対戦できる部門のチームが残っていない）
+                break
+
+            team_a, team_b, sec_id = best_pair
+
+            # 使用したチームをこの時間枠の利用可能リストから除外
+            seg_available_teams[sec_id].remove(team_a)
+            seg_available_teams[sec_id].remove(team_b)
+
+            # 対戦カウント更新と履歴登録
+            team_match_count[team_a["id"]] += 1
+            team_match_count[team_b["id"]] += 1
+            played_pairs.add((team_a["id"], team_b["id"]))
+            played_pairs.add((team_b["id"], team_a["id"]))
+
+            # 肯定・否定の公平化（交互に入れ替え）
+            if flip_flag:
+                aff, neg = team_b, team_a
+            else:
+                aff, neg = team_a, team_b
+            flip_flag = not flip_flag
+
+            generated_matches.append({
+                "event_timetable_segment_id": seg_id,
+                "event_room_id": room["id"],
+                "event_section_id": sec_id,
+                "aff_team_id": aff["id"],
+                "neg_team_id": neg["id"],
+                "order_number_in_segment": order_in_seg,
+            })
+            matches_in_seg += 1
+            order_in_seg += 1
+
+        if matches_in_seg < parallel_count:
+            warnings.append(
+                f"時間枠「{seg['name']}」において、同じ部門内で対戦相手を組めるチームが不足したため、"
+                f"並行試合数 {parallel_count} に対し {matches_in_seg} 試合のみ生成されました。"
+            )
+
+    return generated_matches, warnings
 
 
-# ─── Private helpers ──────────────────────────────────────────────────────────
+def _find_best_pair(
+    seg_available_teams: dict[int, list[dict]],
+    team_match_count: dict[int, int],
+    played_pairs: set[tuple[int, int]],
+) -> tuple[dict, dict, int] | None:
+    """最も適切な対戦ペアを1組探し、(team_a, team_b, section_id) で返す。"""
+    # 候補ペアを探索
+    best_pair: tuple[dict, dict, int] | None = None
+    min_combined_matches = float("inf")
 
-def _extract_section_id(group_key: tuple, group_teams: list[dict]) -> int | None:
-    if group_key[0] == "section":
-        return group_key[1]
-    if group_teams:
-        return group_teams[0].get("event_section_id")
-    return None
+    # 部門ごとに探索
+    for sec_id, available in seg_available_teams.items():
+        if len(available) < 2:
+            continue
 
+        # チームを累計対戦数でソート (少ない順)
+        sorted_avail = sorted(available, key=lambda t: team_match_count[t["id"]])
 
-def _round_robin_pairs(
-    teams: list[dict],
-    rounds: int,
-    section_id: int | None,
-) -> list[dict]:
-    """
-    チームリスト内で総当たりペアを生成する。
+        for i, t_a in enumerate(sorted_avail):
+            for t_b in sorted_avail[i + 1:]:
+                # 同一校対戦は可能な限り避ける
+                is_same_school = (
+                    t_a.get("event_school_id") is not None
+                    and t_a.get("event_school_id") == t_b.get("event_school_id")
+                )
 
-    rounds > 1 の場合、同じペアを複数ラウンド実施する。
-    Aff/Neg は1ラウンド目と2ラウンド目で入れ替わる（公平化）。
-    """
-    pairs: list[dict] = []
-    round_number = 1
+                # 過去の対戦履歴があるか
+                has_played = (t_a["id"], t_b["id"]) in played_pairs
 
-    for r in range(rounds):
-        for i in range(len(teams)):
-            for j in range(i + 1, len(teams)):
-                # 奇数ラウンドは (i=Aff, j=Neg)、偶数ラウンドは逆転
-                if r % 2 == 0:
-                    aff, neg = teams[i], teams[j]
-                else:
-                    aff, neg = teams[j], teams[i]
+                # ペア選定スコア (累計対戦数の合計)
+                score = team_match_count[t_a["id"]] + team_match_count[t_b["id"]]
 
-                pairs.append({
-                    "aff_team_id": aff["id"],
-                    "neg_team_id": neg["id"],
-                    "event_section_id": section_id,
-                    "round_number": round_number,
-                })
-        round_number += 1
+                # 同一校かつ過去対戦ありは最悪のスコア
+                if is_same_school:
+                    score += 1000
+                if has_played:
+                    score += 100
 
-    return pairs
+                if score < min_combined_matches:
+                    min_combined_matches = score
+                    best_pair = (t_a, t_b, sec_id)
+
+    return best_pair

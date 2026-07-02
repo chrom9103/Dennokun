@@ -31,10 +31,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface GenerateMatchesRequest {
-  rounds?: number;
-  judges_per_match?: number;
-  assign_judges?: boolean;
-  assign_slots?: boolean;
+  segment_parallel_matches: Record<number, number>;
   overwrite?: boolean;
 }
 

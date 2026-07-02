@@ -56,13 +56,19 @@ export default function ControlPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Generation
-  const [genForm, setGenForm] = useState<GenForm>({
-    rounds: 1, judges_per_match: 3,
-    assign_judges: false, assign_slots: true, overwrite: false,
-  });
   const [generating, setGenerating] = useState(false);
   const [genResult, setGenResult] = useState<{ generated_count: number; warnings: string[] } | null>(null);
+
+  // Parallel matches per segment
+  const [parallelMatches, setParallelMatches] = useState<Record<number, number>>({});
+  // Form options (overwrite, judges_per_match)
+  const [genForm, setGenForm] = useState<GenForm>({
+    rounds: 1,
+    judges_per_match: 3,
+    assign_judges: false,
+    assign_slots: true,
+    overwrite: false,
+  });
 
   // Judge Assignment
   const [assigningJudges, setAssigningJudges] = useState(false);
@@ -101,6 +107,19 @@ export default function ControlPage() {
       setRooms(roomsData);
       setSegments(segsData);
       setStaffs(staffsData);
+
+      // Initialize parallel matches per segment if not set
+      setParallelMatches((prev) => {
+        const next = { ...prev };
+        segsData.forEach((s) => {
+          if (next[s.id] === undefined) {
+            // デフォルトは会場数 roomsData.length の範囲内で2にするか、会場数が少なければそれに合わせる
+            next[s.id] = Math.min(2, roomsData.length || 2);
+          }
+        });
+        return next;
+      });
+
     } catch (e) {
       setError(e instanceof Error ? e.message : "データの取得に失敗しました");
     } finally {
@@ -128,10 +147,7 @@ export default function ControlPage() {
     setError(null);
     try {
       const req: GenerateMatchesRequest = {
-        rounds: genForm.rounds,
-        judges_per_match: genForm.judges_per_match,
-        assign_judges: false, // 試合のみの生成
-        assign_slots: genForm.assign_slots,
+        segment_parallel_matches: parallelMatches,
         overwrite: genForm.overwrite,
       };
       const result = await generateMatches(eventId, req);
@@ -290,29 +306,58 @@ export default function ControlPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">ラウンド数</label>
-                <input type="number" min={1} max={10} value={genForm.rounds}
-                  onChange={(e) => setGenForm((f) => ({ ...f, rounds: parseInt(e.target.value) || 1 }))}
-                  className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary focus:outline-none"
-                />
+              {/* Parallel matches per segment input list */}
+              <div className="space-y-3">
+                <label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider block">各枠の並行試合数設定</label>
+                <div className="border border-border rounded-xl p-3.5 space-y-3 bg-secondary/10 max-h-60 overflow-y-auto">
+                  {segments.map((seg) => (
+                    <div key={seg.id} className="flex items-center justify-between py-1 border-b border-border/40 last:border-0 last:pb-0">
+                      <div>
+                        <p className="text-sm font-medium">{seg.name}</p>
+                        {seg.start_time && <p className="text-xs text-muted-foreground">{seg.start_time}開始</p>}
+                      </div>
+                      <div className="flex items-center gap-1 bg-white border border-border rounded-lg p-0.5 shadow-sm">
+                        <button
+                          type="button"
+                          onClick={() => setParallelMatches((prev) => ({ ...prev, [seg.id]: Math.max(0, (prev[seg.id] || 0) - 1) }))}
+                          className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min={0}
+                          max={rooms.length || 10}
+                          value={parallelMatches[seg.id] ?? 0}
+                          onChange={(e) => {
+                            const val = Math.max(0, parseInt(e.target.value) || 0);
+                            setParallelMatches((prev) => ({ ...prev, [seg.id]: val }));
+                          }}
+                          className="w-8 text-center text-sm font-semibold focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setParallelMatches((prev) => ({ ...prev, [seg.id]: Math.min(rooms.length || 10, (prev[seg.id] || 0) + 1) }))}
+                          className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* Options */}
               <div className="space-y-2 border border-border rounded-lg p-3">
-                {[
-                  { key: "assign_slots" as const, label: "時間枠・会場を自動割当", desc: "タイムテーブルと会場情報を使って割り当てます" },
-                  { key: "overwrite" as const, label: "既存試合を削除して再生成", desc: "現在の試合をすべて削除してから生成します", danger: true },
-                ].map(({ key, label, desc, danger }) => (
-                  <label key={key} className="flex items-start gap-3 cursor-pointer group hover:bg-muted/30 p-1.5 rounded-lg">
-                    <input type="checkbox" className="mt-0.5 w-4 h-4 accent-primary rounded"
-                      checked={genForm[key]} onChange={(e) => setGenForm((f) => ({ ...f, [key]: e.target.checked }))} />
-                    <div>
-                      <p className={`text-sm font-medium ${danger ? "text-destructive" : ""}`}>{label}</p>
-                      <p className="text-xs text-muted-foreground">{desc}</p>
-                    </div>
-                  </label>
-                ))}
+                <label className="flex items-start gap-3 cursor-pointer group hover:bg-muted/30 p-1.5 rounded-lg">
+                  <input type="checkbox" className="mt-0.5 w-4 h-4 accent-primary rounded"
+                    checked={genForm.overwrite} onChange={(e) => setGenForm((f) => ({ ...f, overwrite: e.target.checked }))} />
+                  <div>
+                    <p className="text-sm font-medium text-destructive">既存試合を削除して再生成</p>
+                    <p className="text-xs text-muted-foreground">現在の試合をすべて削除してから生成します</p>
+                  </div>
+                </label>
               </div>
 
               {/* Match Generation chips */}
