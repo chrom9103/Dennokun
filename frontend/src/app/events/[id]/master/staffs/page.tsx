@@ -183,7 +183,7 @@ export default function StaffsPage() {
           order_of_application: orderStr ? parseInt(orderStr) : null,
           can_be_main_judge: roles.includes("主審"),
           can_be_sub_judge: roles.includes("副審"),
-          can_be_timekeeper: roles.includes("計時"),
+          can_be_timekeeper: roles.includes("司会"),
         });
         count++;
       }
@@ -237,7 +237,7 @@ export default function StaffsPage() {
                 <TableHead>名前</TableHead>
                 <TableHead align="center">主審</TableHead>
                 <TableHead align="center">副審</TableHead>
-                <TableHead align="center">計時</TableHead>
+                <TableHead align="center">司会</TableHead>
                 <TableHead>利害関係校</TableHead>
                 <TableHead>参加可能時間枠</TableHead>
                 <TableHead align="right">操作</TableHead>
@@ -341,7 +341,7 @@ export default function StaffsPage() {
               {[
                 { key: "can_be_main_judge", label: "主審（ヘッドジャッジ）", color: "text-blue-600" },
                 { key: "can_be_sub_judge", label: "副審（サブジャッジ）", color: "text-green-600" },
-                { key: "can_be_timekeeper", label: "計時", color: "text-amber-600" },
+                { key: "can_be_timekeeper", label: "司会・タイマー", color: "text-amber-600" },
               ].map(({ key, label, color }) => (
                 <label key={key} className="flex items-center gap-2 cursor-pointer group">
                   <input type="checkbox"
