@@ -28,6 +28,15 @@ async def ensure_schema_compatibility(conn: asyncpg.Connection) -> None:
         "ALTER TABLE event_timetable_segments ADD COLUMN IF NOT EXISTS end_time TEXT"
     )
 
+    # Compatibility for older databases that do not yet have rebuttal columns
+    # in event_matches. The match detail API expects these columns to exist.
+    await conn.execute(
+        "ALTER TABLE event_matches ADD COLUMN IF NOT EXISTS aff_second_rebuttal_comm INTEGER"
+    )
+    await conn.execute(
+        "ALTER TABLE event_matches ADD COLUMN IF NOT EXISTS neg_second_rebuttal_comm INTEGER"
+    )
+
     # Backfill start_time from legacy column when available.
     await conn.execute(
         """
