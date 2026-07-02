@@ -10,11 +10,11 @@ import { fetchMatch, saveMatchResult, MatchDetail, VotingDetail } from "@/lib/ma
 const emptyVote = (idx: number): VotingDetail => ({
   judge_index: idx,
   aff_won: 0, neg_won: 0,
-  aff_constructive_comm: 0, aff_question_comm: 0, aff_answer_comm: 0,
-  aff_first_rebuttal_comm: 0, aff_second_rebuttal_comm: 0,
-  neg_constructive_comm: 0, neg_question_comm: 0, neg_answer_comm: 0,
-  neg_first_rebuttal_comm: 0, neg_second_rebuttal_comm: 0,
-  aff_comm_sum: 0, neg_comm_sum: 0,
+  aff_constructive_comm: 3, aff_question_comm: 3, aff_answer_comm: 3,
+  aff_first_rebuttal_comm: 3, aff_second_rebuttal_comm: 3,
+  neg_constructive_comm: 3, neg_question_comm: 3, neg_answer_comm: 3,
+  neg_first_rebuttal_comm: 3, neg_second_rebuttal_comm: 3,
+  aff_comm_sum: 15, neg_comm_sum: 15,
   aff_manner: 0, neg_manner: 0,
   note: null,
 });
