@@ -95,4 +95,5 @@ from .handle_db.generate import (
     bulk_insert_matches,
     delete_all_matches,
     update_match_assignment,
+    bulk_update_match_judges,
 )

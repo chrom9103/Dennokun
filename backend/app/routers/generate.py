@@ -177,3 +177,56 @@ async def update_match_assignment(event_id: int, match_id: int, data: MatchAssig
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/assign-judges")
+async def assign_judges_endpoint(event_id: int):
+    """既存の全試合に対して、スタッフ情報・利害関係・担当可能枠からジャッジを自動割り当て・更新する。"""
+    try:
+        from app.core.handle_db.matches import get_all_matches
+        from app.core.handle_db.teams import get_all_teams
+        from app.core.handle_db.staffs import get_all_staffs
+        from app.core.handle_db.generate import bulk_update_match_judges
+        from app.algorithm.judge_assigner import assign_judges
+
+        matches = await get_all_matches(event_id)
+        if not matches:
+            raise HTTPException(
+                status_code=422,
+                detail="試合が登録されていません。先に試合（対戦カード）を生成してください。"
+            )
+
+        teams = await get_all_teams(event_id)
+        staffs = await get_all_staffs(event_id)
+
+        if not staffs:
+            raise HTTPException(
+                status_code=422,
+                detail="スタッフが登録されていません。先にスタッフを登録してください。"
+            )
+
+        judge_staffs = [s for s in staffs if s.get("can_be_main_judge") or s.get("can_be_sub_judge")]
+        if not judge_staffs:
+            raise HTTPException(
+                status_code=422,
+                detail="ジャッジ担当可能なスタッフ（主審・副審の資格持ち）が登録されていません。"
+            )
+
+        # 既存の試合データを基にジャッジを割り当てる
+        assigned_matches = assign_judges(
+            matches=matches,
+            staffs=judge_staffs,
+            teams=teams,
+            judges_per_match=3, # デフォルト3名
+        )
+
+        # 更新を保存
+        await bulk_update_match_judges(assigned_matches)
+
+        return {"status": "ok", "updated_count": len(assigned_matches)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

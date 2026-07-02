@@ -10,7 +10,7 @@ import Modal from "@/components/ui/Modal";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/Table";
-import { generateMatches, deleteAllMatches, updateMatchAssignment, GenerateMatchesRequest } from "@/lib/generateApi";
+import { generateMatches, deleteAllMatches, updateMatchAssignment, GenerateMatchesRequest, assignJudges } from "@/lib/generateApi";
 import { fetchMatches, fetchMatchSummary, MatchListItem, MatchSummary } from "@/lib/matchApi";
 import { fetchTeams, fetchSections, fetchRooms, fetchTimetableSegments, fetchStaffs, Team, Section, Room, TimetableSegment, Staff } from "@/lib/masterApi";
 
@@ -59,10 +59,14 @@ export default function ControlPage() {
   // Generation
   const [genForm, setGenForm] = useState<GenForm>({
     rounds: 1, judges_per_match: 3,
-    assign_judges: true, assign_slots: true, overwrite: false,
+    assign_judges: false, assign_slots: true, overwrite: false,
   });
   const [generating, setGenerating] = useState(false);
   const [genResult, setGenResult] = useState<{ generated_count: number; warnings: string[] } | null>(null);
+
+  // Judge Assignment
+  const [assigningJudges, setAssigningJudges] = useState(false);
+  const [judgeResult, setJudgeResult] = useState<{ status: string; updated_count: number } | null>(null);
 
   // Delete
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -120,12 +124,13 @@ export default function ControlPage() {
     }
     setGenerating(true);
     setGenResult(null);
+    setJudgeResult(null);
     setError(null);
     try {
       const req: GenerateMatchesRequest = {
         rounds: genForm.rounds,
         judges_per_match: genForm.judges_per_match,
-        assign_judges: genForm.assign_judges,
+        assign_judges: false, // 試合のみの生成
         assign_slots: genForm.assign_slots,
         overwrite: genForm.overwrite,
       };
@@ -136,6 +141,27 @@ export default function ControlPage() {
       setError(e instanceof Error ? e.message : "生成に失敗しました");
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function handleAssignJudges() {
+    if (!eventId) return;
+    if (matches.length === 0) {
+      alert("割り当て対象の試合がありません。先に試合の組み合わせを生成してください。");
+      return;
+    }
+    setAssigningJudges(true);
+    setGenResult(null);
+    setJudgeResult(null);
+    setError(null);
+    try {
+      const result = await assignJudges(eventId);
+      setJudgeResult(result);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "審判の割り当てに失敗しました");
+    } finally {
+      setAssigningJudges(false);
     }
   }
 
@@ -240,21 +266,30 @@ export default function ControlPage() {
         </div>
       )}
 
+      {judgeResult && (
+        <div className="px-4 py-3 rounded-lg bg-green-50 border border-green-200 text-green-800 text-sm">
+          <p className="font-semibold flex items-center gap-1.5">
+            <Icon name="check_circle" size={18} />
+            {judgeResult.updated_count}件の試合に審判を自動割り当てしました
+          </p>
+        </div>
+      )}
+
       {/* Generation + Status 2-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Generation form */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-primary/10"><Icon name="auto_awesome" size={20} className="text-primary" /></div>
-              <div>
-                <h3 className="font-semibold">試合自動生成</h3>
-                <p className="text-xs text-muted-foreground">チーム・スタッフ・時間枠情報から対戦を自動生成します</p>
+        <div className="space-y-6">
+          {/* Match Generation Card */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-primary/10"><Icon name="sports" size={20} className="text-primary" /></div>
+                <div>
+                  <h3 className="font-semibold">試合の組み合わせ生成</h3>
+                  <p className="text-xs text-muted-foreground">チームや時間枠情報から対戦ペアと会場スロットを自動生成します</p>
+                </div>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            </CardHeader>
+            <CardContent className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">ラウンド数</label>
                 <input type="number" min={1} max={10} value={genForm.rounds}
@@ -262,64 +297,104 @@ export default function ControlPage() {
                   className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary focus:outline-none"
                 />
               </div>
+
+              {/* Options */}
+              <div className="space-y-2 border border-border rounded-lg p-3">
+                {[
+                  { key: "assign_slots" as const, label: "時間枠・会場を自動割当", desc: "タイムテーブルと会場情報を使って割り当てます" },
+                  { key: "overwrite" as const, label: "既存試合を削除して再生成", desc: "現在の試合をすべて削除してから生成します", danger: true },
+                ].map(({ key, label, desc, danger }) => (
+                  <label key={key} className="flex items-start gap-3 cursor-pointer group hover:bg-muted/30 p-1.5 rounded-lg">
+                    <input type="checkbox" className="mt-0.5 w-4 h-4 accent-primary rounded"
+                      checked={genForm[key]} onChange={(e) => setGenForm((f) => ({ ...f, [key]: e.target.checked }))} />
+                    <div>
+                      <p className={`text-sm font-medium ${danger ? "text-destructive" : ""}`}>{label}</p>
+                      <p className="text-xs text-muted-foreground">{desc}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+
+              {/* Match Generation chips */}
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: `${teams.length}チーム`, icon: "groups", ok: teams.length > 1 },
+                  { label: `${segments.length}時間枠`, icon: "schedule", ok: segments.length > 0 },
+                  { label: `${rooms.length}会場`, icon: "meeting_room", ok: rooms.length > 0 },
+                ].map(({ label, icon, ok }) => (
+                  <span key={label} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${ok ? "border-green-200 bg-green-50 text-green-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+                    <Icon name={ok ? "check_circle" : "warning"} size={13} />
+                    {label}
+                  </span>
+                ))}
+              </div>
+
+              <Button
+                className="w-full"
+                onClick={handleGenerate}
+                loading={generating}
+                disabled={teams.length < 2}
+              >
+                <Icon name="auto_awesome" size={18} />
+                <span className="ml-2">{generating ? "生成中..." : "試合の組み合わせを生成"}</span>
+              </Button>
+              {teams.length < 2 && (
+                <p className="text-xs text-center text-muted-foreground">
+                  チームを2チーム以上登録すると生成できます
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Judge Assignment Card */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-amber-500/10"><Icon name="gavel" size={20} className="text-amber-600" /></div>
+                <div>
+                  <h3 className="font-semibold">審判（ジャッジ）の自動割当</h3>
+                  <p className="text-xs text-muted-foreground">登録済みの試合に対して、利害関係を考慮し審判を自動で割り当てます</p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">1試合のジャッジ数</label>
+                <label className="text-sm font-medium">1試合あたりのジャッジ数</label>
                 <input type="number" min={1} max={5} value={genForm.judges_per_match}
                   onChange={(e) => setGenForm((f) => ({ ...f, judges_per_match: parseInt(e.target.value) || 3 }))}
                   className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary focus:outline-none"
                 />
               </div>
-            </div>
 
-            {/* Options */}
-            <div className="space-y-2 border border-border rounded-lg p-3">
-              {[
-                { key: "assign_slots" as const, label: "時間枠・会場を自動割当", desc: "タイムテーブルと会場情報を使って割り当てます" },
-                { key: "assign_judges" as const, label: "ジャッジを自動割当", desc: "利害関係・担当可否を考慮して割り当てます" },
-                { key: "overwrite" as const, label: "既存試合を削除して再生成", desc: "現在の試合をすべて削除してから生成します", danger: true },
-              ].map(({ key, label, desc, danger }) => (
-                <label key={key} className="flex items-start gap-3 cursor-pointer group hover:bg-muted/30 p-1.5 rounded-lg">
-                  <input type="checkbox" className="mt-0.5 w-4 h-4 accent-primary rounded"
-                    checked={genForm[key]} onChange={(e) => setGenForm((f) => ({ ...f, [key]: e.target.checked }))} />
-                  <div>
-                    <p className={`text-sm font-medium ${danger ? "text-destructive" : ""}`}>{label}</p>
-                    <p className="text-xs text-muted-foreground">{desc}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: `${matches.length}試合`, icon: "sports", ok: matches.length > 0 },
+                  { label: `${staffs.filter(s => s.can_be_main_judge || s.can_be_sub_judge).length}名のジャッジ資格スタッフ`, icon: "badge", ok: staffs.filter(s => s.can_be_main_judge || s.can_be_sub_judge).length > 0 },
+                ].map(({ label, icon, ok }) => (
+                  <span key={label} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${ok ? "border-green-200 bg-green-50 text-green-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+                    <Icon name={ok ? "check_circle" : "warning"} size={13} />
+                    {label}
+                  </span>
+                ))}
+              </div>
 
-            {/* Team/staff info chips */}
-            <div className="flex flex-wrap gap-2">
-              {[
-                { label: `${teams.length}チーム`, icon: "groups", ok: teams.length > 1 },
-                { label: `${staffs.length}スタッフ`, icon: "badge", ok: staffs.length > 0 },
-                { label: `${segments.length}時間枠`, icon: "schedule", ok: segments.length > 0 },
-                { label: `${rooms.length}会場`, icon: "meeting_room", ok: rooms.length > 0 },
-              ].map(({ label, icon, ok }) => (
-                <span key={label} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${ok ? "border-green-200 bg-green-50 text-green-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
-                  <Icon name={ok ? "check_circle" : "warning"} size={13} />
-                  {label}
-                </span>
-              ))}
-            </div>
-
-            <Button
-              className="w-full"
-              onClick={handleGenerate}
-              loading={generating}
-              disabled={teams.length < 2}
-            >
-              <Icon name="auto_awesome" size={18} />
-              <span className="ml-2">{generating ? "生成中..." : "試合を自動生成"}</span>
-            </Button>
-            {teams.length < 2 && (
-              <p className="text-xs text-center text-muted-foreground">
-                チームを2チーム以上登録すると生成できます
-              </p>
-            )}
-          </CardContent>
-        </Card>
+              <Button
+                className="w-full"
+                onClick={handleAssignJudges}
+                loading={assigningJudges}
+                disabled={matches.length === 0 || staffs.filter(s => s.can_be_main_judge || s.can_be_sub_judge).length === 0}
+              >
+                <Icon name="auto_awesome" size={18} />
+                <span className="ml-2">{assigningJudges ? "割り当て中..." : "審判の割り当てを自動生成"}</span>
+              </Button>
+              {matches.length === 0 && (
+                <p className="text-xs text-center text-muted-foreground">
+                  先に試合の組み合わせを生成してください
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Status panel */}
         <div className="space-y-4">

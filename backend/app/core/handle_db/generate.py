@@ -118,3 +118,29 @@ async def update_match_assignment(
         return await get_match_by_id(match_id)
     finally:
         await conn.close()
+
+
+async def bulk_update_match_judges(match_dicts: List[dict]) -> None:
+    """試合のジャッジ割り当て情報（主審・副審1・副審2・人数）を一括更新する。"""
+    from app.core.db import get_db_connection
+    conn = await get_db_connection()
+    try:
+        async with conn.transaction():
+            for m in match_dicts:
+                await conn.execute(
+                    """UPDATE event_matches SET
+                           main_judge_staff_id = $1,
+                           sub_judge1_staff_id = $2,
+                           sub_judge2_staff_id = $3,
+                           judges_assignment_count = $4,
+                           updated_at = NOW()
+                       WHERE id = $5 AND deleted_at IS NULL""",
+                    m.get("main_judge_staff_id"),
+                    m.get("sub_judge1_staff_id"),
+                    m.get("sub_judge2_staff_id"),
+                    m.get("judges_assignment_count", 0),
+                    m["id"],
+                )
+    finally:
+        await conn.close()
+
