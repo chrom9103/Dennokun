@@ -90,3 +90,9 @@ from .handle_db.standings import (
     get_pre_round_standings,
     get_event_match_summary,
 )
+
+from .handle_db.generate import (
+    bulk_insert_matches,
+    delete_all_matches,
+    update_match_assignment,
+)
