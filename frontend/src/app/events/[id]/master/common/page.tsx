@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useParams } from "next/navigation";
 import DivisionSettings from "@/components/pages/events/master/common/DivisionSettings";
 import RoomSettings from "@/components/pages/events/master/common/RoomSettings";
 import TimeSlotSettings from "@/components/pages/events/master/common/TimeSlotSettings";
 import { Card } from "@/components/ui/Card";
+import Icon from "@/components/ui/Icon";
 
 const tabs = [
   { id: "division", label: "部門設定" },
@@ -15,12 +17,19 @@ const tabs = [
 type TabId = (typeof tabs)[number]["id"];
 
 export default function CommonPage() {
+  const params = useParams();
+  const rawId = Array.isArray(params?.id) ? params.id[0] : params?.id;
+  const eventId = rawId ? parseInt(rawId as string) : null;
+
   const [activeTab, setActiveTab] = useState<TabId>("division");
 
-  // Mock data - in a real app, these might be fetched via a hook or props
-  const [divisions] = useState<{ id: string; name: string; code: string }[]>([]);
-  const [rooms] = useState<{ id: string; name: string; capacity: number }[]>([]);
-  const [timeSlots] = useState<{ id: string; name: string; startTime: string; endTime: string }[]>([]);
+  if (!eventId || isNaN(eventId)) {
+    return (
+      <div className="text-center py-16 text-muted-foreground">
+        <p>大会IDが無効です</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -60,13 +69,13 @@ export default function CommonPage() {
         <div className="p-6 min-h-[400px]">
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             {activeTab === "division" && (
-              <DivisionSettings divisions={divisions} />
+              <DivisionSettings eventId={eventId} />
             )}
             {activeTab === "room" && (
-              <RoomSettings rooms={rooms} />
+              <RoomSettings eventId={eventId} />
             )}
             {activeTab === "timeslot" && (
-              <TimeSlotSettings timeSlots={timeSlots} />
+              <TimeSlotSettings eventId={eventId} />
             )}
           </div>
         </div>
@@ -74,7 +83,7 @@ export default function CommonPage() {
       
       <div className="bg-info-light/20 p-4 rounded-lg border border-info-light flex gap-3">
         <div className="text-info shrink-0">
-          <span className="material-icons-outlined">help_outline</span>
+          <Icon name="help_outline" size={20} />
         </div>
         <p className="text-xs text-info-dark leading-relaxed">
           これらの設定はマッチング生成に直接影響します。大会開始後の変更は慎重に行ってください。

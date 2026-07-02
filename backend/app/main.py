@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, events
+from app.routers import auth, events, master, matches, generate
 from app.core.init_db import seed_database
 
 app = FastAPI(title="Dennokun Backend")
@@ -19,6 +19,9 @@ app.add_middleware(
 # Include routers
 app.include_router(auth.router)
 app.include_router(events.router)
+app.include_router(master.router)
+app.include_router(matches.router)
+app.include_router(generate.router)
 
 
 @app.on_event("startup")
