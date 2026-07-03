@@ -560,35 +560,77 @@ export default function ControlPage() {
                           const timekeeper = staffs.find((s) => s.id === m.timekeeper_staff_id);
 
                           const renderStaffName = (staff: Staff | undefined) => {
-                            if (!staff) return null;
-                            const isDuplicate = (segmentStaffAssignments[staff.id] || 0) > 1;
+                             if (!staff) return null;
+                             const isDuplicate = (segmentStaffAssignments[staff.id] || 0) > 1;
 
-                            const affTeam = teams.find((t) => t.id === m.aff_team_id);
-                            const negTeam = teams.find((t) => t.id === m.neg_team_id);
-                            const affSchoolId = affTeam?.event_school_id;
-                            const negSchoolId = negTeam?.event_school_id;
+                             const affTeam = teams.find((t) => t.id === m.aff_team_id);
+                             const negTeam = teams.find((t) => t.id === m.neg_team_id);
+                             const affSchoolId = affTeam?.event_school_id;
+                             const negSchoolId = negTeam?.event_school_id;
 
-                            const isSchoolConflict = !!(
-                              (affSchoolId && staff.interested_school_ids?.includes(affSchoolId)) ||
-                              (negSchoolId && staff.interested_school_ids?.includes(negSchoolId))
-                            );
+                             // 1. Check for related/interested school conflict
+                             const isSchoolConflict = !!(
+                               (affSchoolId && staff.interested_school_ids?.includes(affSchoolId)) ||
+                               (negSchoolId && staff.interested_school_ids?.includes(negSchoolId))
+                             );
 
-                            if (isDuplicate) {
-                              return (
-                                <span className="text-red-600 font-semibold">
-                                  {staff.name}
-                                </span>
-                              );
-                            }
-                            if (isSchoolConflict) {
-                              return (
-                                <span className="text-amber-600 font-semibold">
-                                  {staff.name}
-                                </span>
-                              );
-                            }
-                            return <span>{staff.name}</span>;
-                          };
+                             // 2. Check for past same school referee assignment in same section
+                             const sortedSegments = [...segments].sort((a, b) => {
+                               if (a.order_number !== b.order_number) {
+                                 return (a.order_number ?? 0) - (b.order_number ?? 0);
+                               }
+                               return a.id - b.id;
+                             });
+
+                             const currentSegIdx = sortedSegments.findIndex((s) => s.id === seg.id);
+                             const pastSegments = sortedSegments.slice(0, currentSegIdx);
+                             const pastSegmentIds = new Set(pastSegments.map((s) => s.id));
+                             const pastMatches = matches.filter((pastM) => pastM.event_timetable_segment_id !== null && pastSegmentIds.has(pastM.event_timetable_segment_id));
+
+                             const seenSchoolsInPast = new Set<number>();
+                             pastMatches.forEach((pastM) => {
+                               const isAssigned = (
+                                 pastM.main_judge_staff_id === staff.id ||
+                                 pastM.sub_judge1_staff_id === staff.id ||
+                                 pastM.sub_judge2_staff_id === staff.id ||
+                                 pastM.timekeeper_staff_id === staff.id
+                               );
+                               if (isAssigned && pastM.event_section_id === m.event_section_id) {
+                                 const pastAffTeam = teams.find((t) => t.id === pastM.aff_team_id);
+                                 const pastNegTeam = teams.find((t) => t.id === pastM.neg_team_id);
+                                 if (pastAffTeam?.event_school_id) seenSchoolsInPast.add(pastAffTeam.event_school_id);
+                                 if (pastNegTeam?.event_school_id) seenSchoolsInPast.add(pastNegTeam.event_school_id);
+                               }
+                             });
+
+                             const hasSeenSameSchoolInPast = !!(
+                               (affSchoolId && seenSchoolsInPast.has(affSchoolId)) ||
+                               (negSchoolId && seenSchoolsInPast.has(negSchoolId))
+                             );
+
+                             if (isDuplicate) {
+                               return (
+                                 <span className="text-red-600 font-semibold">
+                                   {staff.name}
+                                 </span>
+                               );
+                             }
+                             if (isSchoolConflict) {
+                               return (
+                                 <span className="text-amber-600 font-semibold">
+                                   {staff.name}
+                                 </span>
+                               );
+                             }
+                             if (hasSeenSameSchoolInPast) {
+                               return (
+                                 <span className="text-blue-600 font-semibold">
+                                   {staff.name}
+                                 </span>
+                               );
+                             }
+                             return <span>{staff.name}</span>;
+                           };
 
                           const renderJudges = () => {
                             const elements: React.ReactNode[] = [];
