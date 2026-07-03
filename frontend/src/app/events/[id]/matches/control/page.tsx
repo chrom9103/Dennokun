@@ -543,29 +543,16 @@ export default function ControlPage() {
                     </div>
                     <Badge variant="outline" className="bg-white border-border/80 text-xs font-semibold">{segMatches.length} 試合</Badge>
                   </CardHeader>
-                  <CardContent className="p-0">
-                    <Table className="border-none rounded-none">
-                      <TableHeader>
-                        <TableRow hover={false}>
-                          <TableHead className="pl-4">会場</TableHead>
-                          <TableHead>部門</TableHead>
-                          <TableHead>肯定側</TableHead>
-                          <TableHead align="center" className="text-center w-12">VS</TableHead>
-                          <TableHead>否定側</TableHead>
-                          <TableHead>審判</TableHead>
-                          <TableHead>司会タイマー</TableHead>
-                          <TableHead align="center" className="text-center w-20">状態</TableHead>
-                          <TableHead align="right" className="pr-4 text-right w-16">微調整</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {segMatches.map((m) => {
-                          const mainJudge = staffs.find((s) => s.id === m.main_judge_staff_id);
-                          const subJudge1 = staffs.find((s) => s.id === m.sub_judge1_staff_id);
-                          const subJudge2 = staffs.find((s) => s.id === m.sub_judge2_staff_id);
-                          const timekeeper = staffs.find((s) => s.id === m.timekeeper_staff_id);
+                  <CardContent className="p-0 bg-slate-50/30">
+                    {/* Responsive View (Insuficient width / Mobile / Tablet) */}
+                    <div className="xl:hidden divide-y divide-border/60">
+                      {segMatches.map((m) => {
+                        const mainJudge = staffs.find((s) => s.id === m.main_judge_staff_id);
+                        const subJudge1 = staffs.find((s) => s.id === m.sub_judge1_staff_id);
+                        const subJudge2 = staffs.find((s) => s.id === m.sub_judge2_staff_id);
+                        const timekeeper = staffs.find((s) => s.id === m.timekeeper_staff_id);
 
-                          const renderStaffName = (staff: Staff | undefined, roleLabel?: string) => {
+                        const renderStaffName = (staff: Staff | undefined, roleLabel?: string) => {
                              if (!staff) return null;
                              const isDuplicate = (segmentStaffAssignments[staff.id] || 0) > 1;
 
@@ -574,13 +561,11 @@ export default function ControlPage() {
                              const affSchoolId = affTeam?.event_school_id;
                              const negSchoolId = negTeam?.event_school_id;
 
-                             // 1. Check for related/interested school conflict
                              const isSchoolConflict = !!(
                                (affSchoolId && staff.interested_school_ids?.includes(affSchoolId)) ||
                                (negSchoolId && staff.interested_school_ids?.includes(negSchoolId))
                              );
 
-                             // 2. Check for past same school referee assignment in same section
                              const sortedSegments = [...segments].sort((a, b) => {
                                if (a.order_number !== b.order_number) {
                                  return (a.order_number ?? 0) - (b.order_number ?? 0);
@@ -624,58 +609,233 @@ export default function ControlPage() {
                              }
 
                              return (
-                               <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs shadow-xs transition-all ${chipClass}`}>
+                               <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs shadow-xs transition-all w-[130px] min-w-[130px] shrink-0 ${chipClass}`}>
                                  {roleLabel && (
-                                   <span className="text-[10px] font-bold text-muted-foreground/60 mr-0.5 bg-black/5 dark:bg-white/10 px-1 py-0.5 rounded">
+                                   <span className="text-[10px] font-bold text-muted-foreground/60 mr-0.5 bg-black/5 dark:bg-white/10 px-1 py-0.5 rounded shrink-0">
                                      {roleLabel}
                                    </span>
                                  )}
-                                 <span className="inline-block w-[76px] truncate align-bottom" title={staff.name}>{staff.name}</span>
+                                 <span className="inline-block flex-1 min-w-0 truncate align-bottom" title={staff.name}>{staff.name}</span>
                                </span>
                              );
-                           };
+                        };
 
-                           const renderJudges = () => {
-                             const elements: React.ReactNode[] = [];
-                             if (mainJudge) elements.push(renderStaffName(mainJudge, "主"));
-                             if (subJudge1) elements.push(renderStaffName(subJudge1, "副"));
-                             if (subJudge2) elements.push(renderStaffName(subJudge2, "副"));
-                             if (elements.length === 0) return <span className="text-muted-foreground text-xs">-</span>;
-                             return (
-                               <div className="flex flex-wrap gap-1.5">
-                                 {elements}
-                               </div>
-                             );
-                           };
-
-                           return (
-                            <TableRow key={m.id}>
-                              <TableCell className="text-sm font-medium pl-4">{m.room_name ?? <span className="italic text-xs text-muted-foreground">未割当</span>}</TableCell>
-                              <TableCell>
-                                {m.section_name
-                                  ? <Badge variant="outline" className="text-[10px] border-primary/30 text-primary font-medium">{m.section_name}</Badge>
-                                  : null}
-                              </TableCell>
-                              <TableCell className="font-semibold text-sm">{m.aff_team_name ?? <span className="text-muted-foreground text-xs">-</span>}</TableCell>
-                              <TableCell align="center" className="text-center font-bold text-xs text-muted-foreground/60 w-12">VS</TableCell>
-                              <TableCell className="font-semibold text-sm">{m.neg_team_name ?? <span className="text-muted-foreground text-xs">-</span>}</TableCell>
-                              <TableCell className="text-xs text-muted-foreground font-medium">{renderJudges()}</TableCell>
-                              <TableCell className="text-xs text-muted-foreground font-medium">{renderStaffName(timekeeper, "計") || "-"}</TableCell>
-                              <TableCell align="center" className="text-center w-20">
-                                {m.is_result_confirmed
-                                  ? <Badge variant="success" className="text-[10px] font-semibold">確定</Badge>
-                                  : <Badge variant="outline" className="text-[10px] font-medium">未入力</Badge>}
-                              </TableCell>
-                              <TableCell align="right" className="pr-4 text-right w-16">
-                                <Button variant="ghost" size="sm" className="p-1.5 h-auto rounded-full text-primary hover:bg-primary/5 active:scale-95" onClick={() => openEdit(m)}>
-                                  <Icon name="tune" size={18} />
-                                </Button>
-                              </TableCell>
-                            </TableRow>
+                        const renderJudges = () => {
+                          const elements: React.ReactNode[] = [];
+                          if (mainJudge) elements.push(renderStaffName(mainJudge, "主"));
+                          if (subJudge1) elements.push(renderStaffName(subJudge1, "副"));
+                          if (subJudge2) elements.push(renderStaffName(subJudge2, "副"));
+                          if (elements.length === 0) return <span className="text-muted-foreground text-xs">-</span>;
+                          return (
+                            <div className="flex flex-col gap-1.5 w-fit">
+                              {elements}
+                            </div>
                           );
-                        })}
-                      </TableBody>
-                    </Table>
+                        };
+
+                        return (
+                          <div key={m.id} className="p-4 space-y-3 bg-white hover:bg-slate-50/50 transition-colors">
+                            {/* Row 1: 会場 部門 肯定側 vs 否定側 */}
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/30 pb-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-bold text-foreground whitespace-nowrap">
+                                  {m.room_name ?? <span className="italic text-xs text-muted-foreground">未割当</span>}
+                                </span>
+                                {m.section_name && (
+                                  <span title={m.section_name}>
+                                    <span className="inline-flex items-center justify-center rounded-full border border-primary/30 text-primary bg-transparent text-[10px] font-medium w-[6.2em] h-[18px] px-1">
+                                      <span className="truncate text-center w-full">{m.section_name}</span>
+                                    </span>
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 text-sm font-semibold">
+                                <span className="text-foreground max-w-[120px] truncate">{m.aff_team_name ?? "-"}</span>
+                                <span className="text-xs text-muted-foreground/50 font-normal">vs</span>
+                                <span className="text-foreground max-w-[120px] truncate">{m.neg_team_name ?? "-"}</span>
+                              </div>
+                            </div>
+
+                            {/* Row 2: 審判 司会タイマー 状態 変更 */}
+                            <div className="flex flex-wrap items-end justify-between gap-4 pt-1">
+                              <div className="flex flex-wrap gap-x-6 gap-y-2">
+                                {/* Referees */}
+                                <div className="space-y-1">
+                                  <p className="text-[10px] text-muted-foreground/60 font-bold uppercase tracking-wider">審判</p>
+                                  {renderJudges()}
+                                </div>
+                                {/* Timekeeper */}
+                                <div className="space-y-1">
+                                  <p className="text-[10px] text-muted-foreground/60 font-bold uppercase tracking-wider">司会タイマー</p>
+                                  <div>
+                                    {timekeeper ? renderStaffName(timekeeper, "計") : <span className="text-muted-foreground text-xs">-</span>}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-5 ml-auto">
+                                {/* Status */}
+                                <div className="text-center">
+                                  <p className="text-[10px] text-muted-foreground/60 font-bold uppercase tracking-wider mb-1">状態</p>
+                                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${m.is_result_confirmed ? "text-green-600 bg-green-50" : "text-muted-foreground bg-secondary/30"}`}>
+                                    {m.is_result_confirmed ? "完" : "未"}
+                                  </span>
+                                </div>
+                                {/* Change Edit */}
+                                <div className="text-center">
+                                  <p className="text-[10px] text-muted-foreground/60 font-bold uppercase tracking-wider mb-0.5">変更</p>
+                                  <Button variant="ghost" size="sm" className="p-1.5 h-auto rounded-full text-primary hover:bg-primary/5 active:scale-95" onClick={() => openEdit(m)}>
+                                    <Icon name="tune" size={18} />
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Desktop View (Standard Table) */}
+                    <div className="hidden xl:block">
+                      <Table className="border-none rounded-none">
+                        <TableHeader>
+                          <TableRow hover={false}>
+                            <TableHead className="pl-4 whitespace-nowrap w-fit">会場</TableHead>
+                            <TableHead className="w-[80px]">部門</TableHead>
+                            <TableHead>肯定側</TableHead>
+                            <TableHead align="center" className="text-center w-12">VS</TableHead>
+                            <TableHead>否定側</TableHead>
+                            <TableHead className="w-[300px] min-w-[300px]">審判</TableHead>
+                            <TableHead className="w-[165px] min-w-[165px]">司会タイマー</TableHead>
+                            <TableHead align="center" className="text-center w-20">状態</TableHead>
+                            <TableHead align="right" className="pr-4 text-right w-16">変更</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {segMatches.map((m) => {
+                            const mainJudge = staffs.find((s) => s.id === m.main_judge_staff_id);
+                            const subJudge1 = staffs.find((s) => s.id === m.sub_judge1_staff_id);
+                            const subJudge2 = staffs.find((s) => s.id === m.sub_judge2_staff_id);
+                            const timekeeper = staffs.find((s) => s.id === m.timekeeper_staff_id);
+
+                            const renderStaffName = (staff: Staff | undefined, roleLabel?: string) => {
+                               if (!staff) return null;
+                               const isDuplicate = (segmentStaffAssignments[staff.id] || 0) > 1;
+
+                               const affTeam = teams.find((t) => t.id === m.aff_team_id);
+                               const negTeam = teams.find((t) => t.id === m.neg_team_id);
+                               const affSchoolId = affTeam?.event_school_id;
+                               const negSchoolId = negTeam?.event_school_id;
+
+                               const isSchoolConflict = !!(
+                                 (affSchoolId && staff.interested_school_ids?.includes(affSchoolId)) ||
+                                 (negSchoolId && staff.interested_school_ids?.includes(negSchoolId))
+                               );
+
+                               const sortedSegments = [...segments].sort((a, b) => {
+                                 if (a.order_number !== b.order_number) {
+                                   return (a.order_number ?? 0) - (b.order_number ?? 0);
+                                 }
+                                 return a.id - b.id;
+                               });
+
+                               const currentSegIdx = sortedSegments.findIndex((s) => s.id === seg.id);
+                               const pastSegments = sortedSegments.slice(0, currentSegIdx);
+                               const pastSegmentIds = new Set(pastSegments.map((s) => s.id));
+                               const pastMatches = matches.filter((pastM) => pastM.event_timetable_segment_id !== null && pastSegmentIds.has(pastM.event_timetable_segment_id));
+
+                               const seenSchoolsInPast = new Set<number>();
+                               pastMatches.forEach((pastM) => {
+                                 const isAssigned = (
+                                   pastM.main_judge_staff_id === staff.id ||
+                                   pastM.sub_judge1_staff_id === staff.id ||
+                                   pastM.sub_judge2_staff_id === staff.id ||
+                                   pastM.timekeeper_staff_id === staff.id
+                                 );
+                                 if (isAssigned && pastM.event_section_id === m.event_section_id) {
+                                   const pastAffTeam = teams.find((t) => t.id === pastM.aff_team_id);
+                                   const pastNegTeam = teams.find((t) => t.id === pastM.neg_team_id);
+                                   if (pastAffTeam?.event_school_id) seenSchoolsInPast.add(pastAffTeam.event_school_id);
+                                   if (pastNegTeam?.event_school_id) seenSchoolsInPast.add(pastNegTeam.event_school_id);
+                                 }
+                               });
+
+                               const hasSeenSameSchoolInPast = !!(
+                                 (affSchoolId && seenSchoolsInPast.has(affSchoolId)) ||
+                                 (negSchoolId && seenSchoolsInPast.has(negSchoolId))
+                               );
+
+                               let chipClass = "bg-secondary/20 border-border/80 text-foreground font-medium";
+                               if (isDuplicate) {
+                                 chipClass = "bg-red-50 border-red-200 text-red-600 font-semibold";
+                               } else if (isSchoolConflict) {
+                                 chipClass = "bg-amber-50 border-amber-200 text-amber-600 font-semibold";
+                               } else if (hasSeenSameSchoolInPast) {
+                                 chipClass = "bg-blue-50 border-blue-200 text-blue-600 font-semibold";
+                               }
+
+                               return (
+                                 <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs shadow-xs transition-all w-[130px] min-w-[130px] shrink-0 ${chipClass}`}>
+                                   {roleLabel && (
+                                     <span className="text-[10px] font-bold text-muted-foreground/60 mr-0.5 bg-black/5 dark:bg-white/10 px-1 py-0.5 rounded shrink-0">
+                                       {roleLabel}
+                                     </span>
+                                   )}
+                                   <span className="inline-block flex-1 min-w-0 truncate align-bottom" title={staff.name}>{staff.name}</span>
+                                 </span>
+                               );
+                            };
+
+                            const renderJudges = () => {
+                              const elements: React.ReactNode[] = [];
+                              if (mainJudge) elements.push(renderStaffName(mainJudge, "主"));
+                              if (subJudge1) elements.push(renderStaffName(subJudge1, "副"));
+                              if (subJudge2) elements.push(renderStaffName(subJudge2, "副"));
+                              if (elements.length === 0) return <span className="text-muted-foreground text-xs">-</span>;
+                              return (
+                                <div className="grid grid-cols-2 gap-1.5 w-fit">
+                                  {elements}
+                                </div>
+                              );
+                            };
+
+                            return (
+                              <TableRow key={m.id}>
+                                <TableCell className="text-sm font-medium pl-4 whitespace-nowrap w-fit">{m.room_name ?? <span className="italic text-xs text-muted-foreground">未割当</span>}</TableCell>
+                                <TableCell>
+                                  {m.section_name
+                                    ? (
+                                      <span title={m.section_name}>
+                                        <span className="inline-flex items-center justify-center rounded-full border border-primary/30 text-primary bg-transparent text-[10px] font-medium w-[6.2em] h-[18px] px-1">
+                                          <span className="truncate text-center w-full">{m.section_name}</span>
+                                        </span>
+                                      </span>
+                                    )
+                                    : null}
+                                </TableCell>
+                                <TableCell className="font-semibold text-sm">{m.aff_team_name ?? <span className="text-muted-foreground text-xs">-</span>}</TableCell>
+                                <TableCell align="center" className="text-center font-bold text-xs text-muted-foreground/60 w-12">VS</TableCell>
+                                <TableCell className="font-semibold text-sm">{m.neg_team_name ?? <span className="text-muted-foreground text-xs">-</span>}</TableCell>
+                                <TableCell className="py-2.5">{renderJudges()}</TableCell>
+                                <TableCell className="py-2.5">
+                                  {timekeeper ? renderStaffName(timekeeper, "計") : <span className="text-muted-foreground text-xs">-</span>}
+                                </TableCell>
+                                <TableCell align="center" className="text-center w-20">
+                                  <span className={`text-xs font-bold ${m.is_result_confirmed ? "text-green-600" : "text-muted-foreground"}`}>
+                                    {m.is_result_confirmed ? "完" : "未"}
+                                  </span>
+                                </TableCell>
+                                <TableCell align="right" className="pr-4 text-right w-16">
+                                  <Button variant="ghost" size="sm" className="p-1.5 h-auto rounded-full text-primary hover:bg-primary/5 active:scale-95" onClick={() => openEdit(m)}>
+                                    <Icon name="tune" size={18} />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </CardContent>
                 </Card>
               );
