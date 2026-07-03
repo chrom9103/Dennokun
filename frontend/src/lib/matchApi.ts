@@ -47,6 +47,7 @@ export interface MatchListItem {
   aff_won: number | null;
   neg_won: number | null;
   is_result_confirmed: boolean;
+  is_staffs_fixed: boolean;
   judges_assignment_count: number | null;
   order_number_in_segment: number | null;
   note: string | null;

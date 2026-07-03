@@ -52,10 +52,49 @@ def assign_judges(
         for seg_id in sorted_seg_ids:
             segment_used = set()
             segment_matches = seg_matches[seg_id]
-            
-            # Copy to avoid mutating original dictionary until success
-            shuffled_matches = [dict(m) for m in segment_matches]
-            # Randomize the match assignment order within the segment to explore different choices
+
+            # 確定済み試合と未確定試合を分ける
+            confirmed_in_seg = [m for m in segment_matches if m.get("is_staffs_fixed")]
+            unconfirmed_in_seg = [m for m in segment_matches if not m.get("is_staffs_fixed")]
+
+            # 確定済み試合のスタッフ・学校割当を先に反映・ロック
+            for match in confirmed_in_seg:
+                assigned_matches.append(match)
+
+                aff_team_id = match.get("aff_team_id")
+                neg_team_id = match.get("neg_team_id")
+                aff_school_id = team_school_map.get(aff_team_id) if aff_team_id else None
+                neg_school_id = team_school_map.get(neg_team_id) if neg_team_id else None
+
+                assigned_staff_ids = []
+                for role in ["main_judge_staff_id", "sub_judge1_staff_id", "sub_judge2_staff_id", "timekeeper_staff_id"]:
+                    s_id = match.get(role)
+                    if s_id:
+                        assigned_staff_ids.append(s_id)
+                        segment_used.add(s_id)
+                        if s_id in judge_assignment_count:
+                            judge_assignment_count[s_id] += 1
+
+                section_id = match.get("event_section_id")
+                if section_id is not None:
+                    for s_id in assigned_staff_ids:
+                        if (s_id, section_id) not in past_schools_by_staff_section:
+                            past_schools_by_staff_section[(s_id, section_id)] = set()
+                        if aff_school_id:
+                            past_schools_by_staff_section[(s_id, section_id)].add(aff_school_id)
+                        if neg_school_id:
+                            past_schools_by_staff_section[(s_id, section_id)].add(neg_school_id)
+
+            # 未確定試合をコピーして初期化
+            shuffled_matches = [dict(m) for m in unconfirmed_in_seg]
+            for m in shuffled_matches:
+                m["main_judge_staff_id"] = None
+                m["sub_judge1_staff_id"] = None
+                m["sub_judge2_staff_id"] = None
+                m["timekeeper_staff_id"] = None
+                m["judges_assignment_count"] = 0
+
+            # 選択順序をランダム化
             random.shuffle(shuffled_matches)
 
             for match in shuffled_matches:

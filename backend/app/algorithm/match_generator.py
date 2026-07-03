@@ -36,6 +36,7 @@ def generate_matches_by_slots(
     segments: list[dict],
     rooms: list[dict],
     parallel_matches_map: dict[int, int],
+    confirmed_matches: list[dict] = None,
 ) -> tuple[list[dict], list[str]]:
     """
     時間枠の並行試合数に基づいて、チームを対戦ペアに割り振り、会場スロットを割り当てる。
@@ -52,10 +53,25 @@ def generate_matches_by_slots(
     if not rooms:
         return [], ["会場が登録されていません。"]
 
+    if confirmed_matches is None:
+        confirmed_matches = []
+
     # チームごとの累計対戦数カウンター
     team_match_count: dict[int, int] = {t["id"]: 0 for t in teams}
     # これまでに対戦したペア履歴
     played_pairs: set[tuple[int, int]] = set()
+
+    # 既に確定している試合の対戦情報を履歴・カウントに反映
+    for m in confirmed_matches:
+        aff_id = m.get("aff_team_id")
+        neg_id = m.get("neg_team_id")
+        if aff_id in team_match_count:
+            team_match_count[aff_id] += 1
+        if neg_id in team_match_count:
+            team_match_count[neg_id] += 1
+        if aff_id and neg_id:
+            played_pairs.add((aff_id, neg_id))
+            played_pairs.add((neg_id, aff_id))
 
     # ソートされた時間枠と会場
     sorted_segments = sorted(segments, key=lambda s: s.get("order_number") or 0)
@@ -73,31 +89,42 @@ def generate_matches_by_slots(
 
     for seg in sorted_segments:
         seg_id = seg["id"]
+        
+        # このセグメントの既定（確定済み）の部屋IDとチームIDを収集
+        seg_confirmed = [m for m in confirmed_matches if m.get("event_timetable_segment_id") == seg_id]
+        confirmed_room_ids = {m.get("event_room_id") for m in seg_confirmed if m.get("event_room_id") is not None}
+        confirmed_team_ids = {m.get("aff_team_id") for m in seg_confirmed if m.get("aff_team_id") is not None} | \
+                             {m.get("neg_team_id") for m in seg_confirmed if m.get("neg_team_id") is not None}
+
         parallel_count = parallel_matches_map.get(seg_id, 0)
-        if parallel_count <= 0:
+        # 実際に新しく生成すべき数
+        needed_new_count = parallel_count - len(seg_confirmed)
+        if needed_new_count <= 0:
             continue
 
-        # 会場数が足りない場合
-        if len(sorted_rooms) < parallel_count:
+        # 空いている部屋を選択（確定済みの部屋以外から、順序が上のものを選択）
+        available_rooms = [r for r in sorted_rooms if r["id"] not in confirmed_room_ids]
+        if len(available_rooms) < needed_new_count:
             warnings.append(
-                f"時間枠「{seg['name']}」の並行試合数 {parallel_count} に対して、"
-                f"登録されている会場数 ({len(sorted_rooms)}) が不足しています。"
-                f"割り当て可能な {len(sorted_rooms)} 試合のみ生成します。"
+                f"時間枠「{seg['name']}」の新規生成必要数 {needed_new_count} に対して、"
+                f"使用可能な空き会場数 ({len(available_rooms)}) が不足しています。"
+                f"割り当て可能な {len(available_rooms)} 試合のみ生成します。"
             )
-            parallel_count = len(sorted_rooms)
+            needed_new_count = len(available_rooms)
 
         # この時間枠で対戦に使用する会場
-        used_rooms = sorted_rooms[:parallel_count]
+        used_rooms = available_rooms[:needed_new_count]
 
-        # 部門ごとの利用可能チーム
-        seg_available_teams: dict[int, list[dict]] = {
-            sec_id: [t for t in sec_teams]
-            for sec_id, sec_teams in section_teams.items()
-        }
+        # 部門ごとの利用可能チーム (確定済みのチームを除く)
+        seg_available_teams: dict[int, list[dict]] = {}
+        for sec_id, sec_teams in section_teams.items():
+            seg_available_teams[sec_id] = [
+                t for t in sec_teams if t["id"] not in confirmed_team_ids
+            ]
 
         # この時間枠での対戦カードを生成
         matches_in_seg = 0
-        order_in_seg = 1
+        order_in_seg = len(seg_confirmed) + 1 # Start after confirmed matches
 
         # 会場スロット分だけ試合を組む
         for room in used_rooms:
@@ -145,10 +172,10 @@ def generate_matches_by_slots(
             matches_in_seg += 1
             order_in_seg += 1
 
-        if matches_in_seg < parallel_count:
+        if matches_in_seg < needed_new_count:
             warnings.append(
                 f"時間枠「{seg['name']}」において、同じ部門内で対戦相手を組めるチームが不足したため、"
-                f"並行試合数 {parallel_count} に対し {matches_in_seg} 試合のみ生成されました。"
+                f"新規並行試合数 {needed_new_count} に対し {matches_in_seg} 試合のみ生成されました。"
             )
 
     return generated_matches, warnings

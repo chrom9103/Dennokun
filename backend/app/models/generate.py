@@ -37,6 +37,12 @@ class MatchAssignmentUpdate(BaseModel):
     timekeeper_staff_id: Optional[int] = None
     event_section_id: Optional[int] = None
     order_number_in_segment: Optional[int] = None
+    is_staffs_fixed: Optional[bool] = None
+
+
+class LockSegmentStaffsRequest(BaseModel):
+    """時間枠の試合の配置・割当を確定（または解除）するリクエスト。"""
+    is_fixed: bool
 
 
 # ── Dashboard summary ──────────────────────────────────────────────────────────

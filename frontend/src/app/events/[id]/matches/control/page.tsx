@@ -10,7 +10,7 @@ import Modal from "@/components/ui/Modal";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/Table";
-import { generateMatches, deleteAllMatches, updateMatchAssignment, GenerateMatchesRequest, assignJudges } from "@/lib/generateApi";
+import { generateMatches, deleteAllMatches, updateMatchAssignment, GenerateMatchesRequest, assignJudges, toggleSegmentLock } from "@/lib/generateApi";
 import { fetchMatches, fetchMatchSummary, MatchListItem, MatchSummary } from "@/lib/matchApi";
 import { fetchTeams, fetchSections, fetchRooms, fetchTimetableSegments, fetchStaffs, Team, Section, Room, TimetableSegment, Staff } from "@/lib/masterApi";
 
@@ -154,8 +154,8 @@ export default function ControlPage() {
 
   async function handleGenerate() {
     if (!eventId) return;
-    if (genForm.overwrite && matches.length > 0) {
-      if (!confirm(`既存の${matches.length}件の試合を削除してから再生成します。よろしいですか？`)) return;
+    if (matches.length > 0) {
+      if (!confirm("確定されていない試合を削除して再生成します。よろしいですか？")) return;
     }
     setGenerating(true);
     setGenResult(null);
@@ -164,7 +164,7 @@ export default function ControlPage() {
     try {
       const req: GenerateMatchesRequest = {
         segment_parallel_matches: parallelMatches,
-        overwrite: genForm.overwrite,
+        overwrite: false,
       };
       const result = await generateMatches(eventId, req);
       setGenResult({ generated_count: result.generated_count, warnings: result.warnings });
@@ -228,6 +228,11 @@ export default function ControlPage() {
 
   async function handleSaveEdit() {
     if (!eventId || !editForm) return;
+    const match = matches.find(m => m.id === editForm.matchId);
+    if (match?.is_staffs_fixed) {
+      alert("この試合は確定されているため編集できません。");
+      return;
+    }
     setSavingEdit(true);
     try {
       const update: Record<string, number | null> = {};
@@ -249,6 +254,284 @@ export default function ControlPage() {
       setSavingEdit(false);
     }
   }
+
+  const [activeDropdown, setActiveDropdown] = useState<{ matchId: number; role: 'main' | 'sub1' | 'sub2' | 'timekeeper' } | null>(null);
+  const [isParamsOpen, setIsParamsOpen] = useState(false);
+
+  async function handleToggleSegmentLock(segmentId: number, isFixed: boolean) {
+    if (!eventId) return;
+    try {
+      await toggleSegmentLock(eventId, segmentId, isFixed);
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "確定状態の更新に失敗しました");
+    }
+  }
+
+  async function handleUpdateRole(matchId: number, role: string, staffId: number | null) {
+    if (!eventId) return;
+    try {
+      const update: Record<string, number | null> = {};
+      if (role === 'main') update.main_judge_staff_id = staffId;
+      if (role === 'sub1') update.sub_judge1_staff_id = staffId;
+      if (role === 'sub2') update.sub_judge2_staff_id = staffId;
+      if (role === 'timekeeper') update.timekeeper_staff_id = staffId;
+
+      await updateMatchAssignment(eventId, matchId, update);
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "更新に失敗しました");
+    }
+  }
+
+  const getSortedCandidates = (match: MatchListItem, role: 'main' | 'sub1' | 'sub2' | 'timekeeper', segmentStaffAssignments: Record<number, number>, seg: any) => {
+    const candidates = staffs.filter((s) => {
+      if (role === 'timekeeper') return s.can_be_timekeeper;
+      if (role === 'main') return s.can_be_main_judge;
+      return s.can_be_sub_judge;
+    });
+
+    const affTeam = teams.find((t) => t.id === match.aff_team_id);
+    const negTeam = teams.find((t) => t.id === match.neg_team_id);
+    const affSchoolId = affTeam?.event_school_id;
+    const negSchoolId = negTeam?.event_school_id;
+
+    const sortedSegments = [...segments].sort((a, b) => {
+      if (a.order_number !== b.order_number) {
+        return (a.order_number ?? 0) - (b.order_number ?? 0);
+      }
+      return a.id - b.id;
+    });
+    const currentSegIdx = sortedSegments.findIndex((s) => s.id === match.event_timetable_segment_id);
+    const pastSegments = sortedSegments.slice(0, currentSegIdx);
+    const pastSegmentIds = new Set(pastSegments.map((s) => s.id));
+    const pastMatches = matches.filter((pastM) => pastM.event_timetable_segment_id !== null && pastSegmentIds.has(pastM.event_timetable_segment_id));
+
+    return candidates.map((staff) => {
+      const isDuplicate = matches.some((m) => {
+        if (m.event_timetable_segment_id === match.event_timetable_segment_id) {
+          if (m.id !== match.id) {
+            return m.main_judge_staff_id === staff.id ||
+                   m.sub_judge1_staff_id === staff.id ||
+                   m.sub_judge2_staff_id === staff.id ||
+                   m.timekeeper_staff_id === staff.id;
+          } else {
+            return (role !== 'main' && m.main_judge_staff_id === staff.id) ||
+                   (role !== 'sub1' && m.sub_judge1_staff_id === staff.id) ||
+                   (role !== 'sub2' && m.sub_judge2_staff_id === staff.id) ||
+                   (role !== 'timekeeper' && m.timekeeper_staff_id === staff.id);
+          }
+        }
+        return false;
+      });
+
+      const isSchoolConflict = !!(
+        (affSchoolId && staff.interested_school_ids?.includes(affSchoolId)) ||
+        (negSchoolId && staff.interested_school_ids?.includes(negSchoolId))
+      );
+
+      const seenSchoolsInPast = new Set<number>();
+      pastMatches.forEach((pastM) => {
+        const isAssigned = (
+          pastM.main_judge_staff_id === staff.id ||
+          pastM.sub_judge1_staff_id === staff.id ||
+          pastM.sub_judge2_staff_id === staff.id ||
+          pastM.timekeeper_staff_id === staff.id
+        );
+        if (isAssigned && pastM.event_section_id === match.event_section_id) {
+          const pastAffTeam = teams.find((t) => t.id === pastM.aff_team_id);
+          const pastNegTeam = teams.find((t) => t.id === pastM.neg_team_id);
+          if (pastAffTeam?.event_school_id) seenSchoolsInPast.add(pastAffTeam.event_school_id);
+          if (pastNegTeam?.event_school_id) seenSchoolsInPast.add(pastNegTeam.event_school_id);
+        }
+      });
+
+      const hasSeenSameSchoolInPast = !!(
+        (affSchoolId && seenSchoolsInPast.has(affSchoolId)) ||
+        (negSchoolId && seenSchoolsInPast.has(negSchoolId))
+      );
+
+      let category = 0;
+      if (isDuplicate) category = 3;
+      else if (isSchoolConflict) category = 2;
+      else if (hasSeenSameSchoolInPast) category = 1;
+
+      return { staff, category };
+    }).sort((a, b) => {
+      if (a.category !== b.category) {
+        return a.category - b.category;
+      }
+      return a.staff.id - b.staff.id;
+    });
+  };
+
+  const renderSlot = (match: MatchListItem, role: 'main' | 'sub1' | 'sub2' | 'timekeeper', label: string, segmentStaffAssignments: Record<number, number>, seg: any) => {
+    const staffId = role === 'main' ? match.main_judge_staff_id :
+                    role === 'sub1' ? match.sub_judge1_staff_id :
+                    role === 'sub2' ? match.sub_judge2_staff_id :
+                    match.timekeeper_staff_id;
+
+    const staff = staffs.find((s) => s.id === staffId);
+    const isLocked = match.is_staffs_fixed;
+
+    let chipClass = "border-dashed border-border/80 bg-transparent text-muted-foreground/60 font-normal";
+    let isDuplicate = false;
+    let isSchoolConflict = false;
+    let hasSeenSameSchoolInPast = false;
+
+    if (staff) {
+      isDuplicate = (segmentStaffAssignments[staff.id] || 0) > 1;
+
+      const affTeam = teams.find((t) => t.id === match.aff_team_id);
+      const negTeam = teams.find((t) => t.id === match.neg_team_id);
+      const affSchoolId = affTeam?.event_school_id;
+      const negSchoolId = negTeam?.event_school_id;
+
+      isSchoolConflict = !!(
+        (affSchoolId && staff.interested_school_ids?.includes(affSchoolId)) ||
+        (negSchoolId && staff.interested_school_ids?.includes(negSchoolId))
+      );
+
+      const sortedSegments = [...segments].sort((a, b) => {
+        if (a.order_number !== b.order_number) {
+          return (a.order_number ?? 0) - (b.order_number ?? 0);
+        }
+        return a.id - b.id;
+      });
+
+      const currentSegIdx = sortedSegments.findIndex((s) => s.id === match.event_timetable_segment_id);
+      const pastSegments = sortedSegments.slice(0, currentSegIdx);
+      const pastSegmentIds = new Set(pastSegments.map((s) => s.id));
+      const pastMatches = matches.filter((pastM) => pastM.event_timetable_segment_id !== null && pastSegmentIds.has(pastM.event_timetable_segment_id));
+
+      const seenSchoolsInPast = new Set<number>();
+      pastMatches.forEach((pastM) => {
+        const isAssigned = (
+          pastM.main_judge_staff_id === staff.id ||
+          pastM.sub_judge1_staff_id === staff.id ||
+          pastM.sub_judge2_staff_id === staff.id ||
+          pastM.timekeeper_staff_id === staff.id
+        );
+        if (isAssigned && pastM.event_section_id === match.event_section_id) {
+          const pastAffTeam = teams.find((t) => t.id === pastM.aff_team_id);
+          const pastNegTeam = teams.find((t) => t.id === pastM.neg_team_id);
+          if (pastAffTeam?.event_school_id) seenSchoolsInPast.add(pastAffTeam.event_school_id);
+          if (pastNegTeam?.event_school_id) seenSchoolsInPast.add(pastNegTeam.event_school_id);
+        }
+      });
+
+      hasSeenSameSchoolInPast = !!(
+        (affSchoolId && seenSchoolsInPast.has(affSchoolId)) ||
+        (negSchoolId && seenSchoolsInPast.has(negSchoolId))
+      );
+
+      chipClass = "bg-secondary/20 border-border/80 text-foreground font-medium";
+      if (isDuplicate) {
+        chipClass = "bg-red-50 border-red-200 text-red-600 font-semibold";
+      } else if (isSchoolConflict) {
+        chipClass = "bg-amber-50 border-amber-200 text-amber-600 font-semibold";
+      } else if (hasSeenSameSchoolInPast) {
+        chipClass = "bg-blue-50 border-blue-200 text-blue-600 font-semibold";
+      }
+    }
+
+    const isOpen = activeDropdown?.matchId === match.id && activeDropdown?.role === role;
+
+    const handleClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (isLocked) return;
+      if (isOpen) {
+        setActiveDropdown(null);
+      } else {
+        setActiveDropdown({ matchId: match.id, role });
+      }
+    };
+
+    return (
+      <div className="relative inline-block text-left">
+        <span
+          onClick={handleClick}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs shadow-xs transition-all w-[130px] min-w-[130px] shrink-0 select-none
+            ${isLocked ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover:shadow-sm active:scale-98'} ${chipClass}`}
+        >
+          <span className="text-[10px] font-bold text-muted-foreground/60 mr-0.5 bg-black/5 dark:bg-white/10 px-1 py-0.5 rounded shrink-0">
+            {label}
+          </span>
+          <span className="inline-block flex-1 min-w-0 truncate align-bottom text-left" title={staff?.name || "未設定"}>
+            {staff?.name || "未設定"}
+          </span>
+        </span>
+
+        {isOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setActiveDropdown(null); }} />
+            <div className="absolute left-0 mt-1 w-[200px] max-h-60 overflow-y-auto bg-white border border-border rounded-lg shadow-lg z-50 py-1 text-sm text-left">
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  setActiveDropdown(null);
+                  await handleUpdateRole(match.id, role, null);
+                }}
+                className="w-full text-left px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary/40 border-b border-border/50 flex items-center gap-1"
+              >
+                <Icon name="clear" size={14} />
+                <span>未設定にリセット</span>
+              </button>
+
+              {getSortedCandidates(match, role, segmentStaffAssignments, seg).map((cand) => {
+                const candColorClass = cand.category === 3 ? "bg-red-50 text-red-700 hover:bg-red-100" :
+                                       cand.category === 2 ? "bg-amber-50 text-amber-700 hover:bg-amber-100" :
+                                       cand.category === 1 ? "bg-blue-50 text-blue-700 hover:bg-blue-100" :
+                                       "hover:bg-secondary/40 text-foreground";
+                return (
+                  <button
+                    key={cand.staff.id}
+                    type="button"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      setActiveDropdown(null);
+                      await handleUpdateRole(match.id, role, cand.staff.id);
+                    }}
+                    className={`w-full text-left px-3 py-1.5 text-xs transition-colors flex items-center justify-between ${candColorClass}`}
+                  >
+                    <span className="font-semibold truncate mr-2">{cand.staff.name}</span>
+                    {cand.category > 0 && (
+                      <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-white/60 border border-current shrink-0">
+                        {cand.category === 3 ? "重複" : cand.category === 2 ? "関係校" : "過去"}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const renderJudges = (m: MatchListItem, segmentStaffAssignments: Record<number, number>, seg: any) => {
+    const segId = m.event_timetable_segment_id;
+    const expectedJudgeCount = (segId !== null ? segmentJudgeCounts[segId] : null) ?? m.judges_assignment_count ?? 3;
+
+    const elements = [];
+    if (expectedJudgeCount >= 1) {
+      elements.push(renderSlot(m, 'main', '主', segmentStaffAssignments, seg));
+    }
+    if (expectedJudgeCount >= 2) {
+      elements.push(renderSlot(m, 'sub1', '副', segmentStaffAssignments, seg));
+    }
+    if (expectedJudgeCount >= 3) {
+      elements.push(renderSlot(m, 'sub2', '副', segmentStaffAssignments, seg));
+    }
+
+    return (
+      <div className="grid grid-cols-2 gap-1.5 w-fit">
+        {elements}
+      </div>
+    );
+  };
 
   const judgeStaffs = staffs.filter((s) => s.can_be_main_judge || s.can_be_sub_judge);
   const uniqueSegments = Array.from(new Map(matches.filter((m) => m.timetable_segment_name).map((m) => [m.event_timetable_segment_id, m.timetable_segment_name])).entries());
@@ -316,8 +599,11 @@ export default function ControlPage() {
       )}
 
       {/* Integrated Parameter Table Card */}
-      <Card>
-        <CardHeader>
+      <Card className="overflow-hidden">
+        <CardHeader
+          onClick={() => setIsParamsOpen(!isParamsOpen)}
+          className="cursor-pointer hover:bg-muted/10 transition-colors flex flex-row items-center justify-between py-4"
+        >
           <div className="flex items-center gap-2">
             <div className="p-2 rounded-lg bg-primary/10"><Icon name="settings" size={20} className="text-primary" /></div>
             <div>
@@ -325,142 +611,133 @@ export default function ControlPage() {
               <p className="text-xs text-muted-foreground">各時間枠における並行試合数と1試合あたりの審判数を設定します</p>
             </div>
           </div>
+          <Icon name={isParamsOpen ? "expand_less" : "expand_more"} size={24} className="text-muted-foreground transition-transform" />
         </CardHeader>
-        <CardContent className="p-0">
-          <Table className="border-none rounded-none">
-            <TableHeader>
-              <TableRow hover={false}>
-                <TableHead>時間枠</TableHead>
-                <TableHead align="center" className="w-1/3 text-center">各枠の並行試合数設定</TableHead>
-                <TableHead align="center" className="w-1/3 text-center">各枠の1試合あたりジャッジ数設定</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {segments.map((seg) => (
-                <TableRow key={seg.id}>
-                  <TableCell className="font-semibold text-foreground py-3">
-                    <p className="text-sm">{seg.name}</p>
-                    {seg.start_time && <p className="text-xs text-muted-foreground font-normal">{seg.start_time}開始</p>}
-                  </TableCell>
-                  
-                  {/* Parallel Matches Column */}
-                  <TableCell align="center" className="py-3">
-                    <div className="inline-flex items-center gap-1 bg-white border border-border rounded-lg p-0.5 shadow-sm">
-                      <button
-                        type="button"
-                        onClick={() => setParallelMatches((prev) => ({ ...prev, [seg.id]: Math.max(0, (prev[seg.id] || 0) - 1) }))}
-                        className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
-                      >
-                        -
-                      </button>
-                      <input
-                        type="number"
-                        min={0}
-                        max={rooms.length || 10}
-                        value={parallelMatches[seg.id] ?? 0}
-                        onChange={(e) => {
-                          const val = Math.max(0, parseInt(e.target.value) || 0);
-                          setParallelMatches((prev) => ({ ...prev, [seg.id]: val }));
-                        }}
-                        className="w-8 text-center text-sm font-semibold focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setParallelMatches((prev) => ({ ...prev, [seg.id]: Math.min(rooms.length || 10, (prev[seg.id] || 0) + 1) }))}
-                        className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </TableCell>
-                  
-                  {/* Judge Count Column */}
-                  <TableCell align="center" className="py-3">
-                    <div className="inline-flex items-center gap-1 bg-white border border-border rounded-lg p-0.5 shadow-sm">
-                      <button
-                        type="button"
-                        onClick={() => setSegmentJudgeCounts((prev) => ({ ...prev, [seg.id]: Math.max(1, (prev[seg.id] || 3) - 1) }))}
-                        className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
-                      >
-                        -
-                      </button>
-                      <input
-                        type="number"
-                        min={1}
-                        max={5}
-                        value={segmentJudgeCounts[seg.id] ?? 3}
-                        onChange={(e) => {
-                          const val = Math.max(1, Math.min(5, parseInt(e.target.value) || 3));
-                          setSegmentJudgeCounts((prev) => ({ ...prev, [seg.id]: val }));
-                        }}
-                        className="w-8 text-center text-sm font-semibold focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setSegmentJudgeCounts((prev) => ({ ...prev, [seg.id]: Math.min(5, (prev[seg.id] || 3) + 1) }))}
-                        className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </TableCell>
+        {isParamsOpen && (
+          <CardContent className="p-0 border-t border-border/60">
+            <Table className="border-none rounded-none">
+              <TableHeader>
+                <TableRow hover={false}>
+                  <TableHead>時間枠</TableHead>
+                  <TableHead align="center" className="w-1/3 text-center">各枠の並行試合数設定</TableHead>
+                  <TableHead align="center" className="w-1/3 text-center">各枠の1試合あたりジャッジ数設定</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-        {/* Card Footer with options and buttons */}
-        <div className="border-t border-border p-4 bg-secondary/5 space-y-4 rounded-b-xl">
-          {/* Options Block */}
-          <div className="text-sm">
-            <label className="flex items-start gap-2.5 cursor-pointer group hover:bg-muted/30 p-1.5 rounded-lg border border-border bg-white shadow-sm max-w-md">
-              <input type="checkbox" className="mt-0.5 w-4 h-4 accent-primary rounded"
-                checked={genForm.overwrite} onChange={(e) => setGenForm((f) => ({ ...f, overwrite: e.target.checked }))} />
-              <div>
-                <p className="text-sm font-semibold text-destructive">既存試合を削除して再生成</p>
-                <p className="text-xs text-muted-foreground">現在の試合をすべて削除してから生成します</p>
+              </TableHeader>
+              <TableBody>
+                {segments.map((seg) => (
+                  <TableRow key={seg.id}>
+                    <TableCell className="font-semibold text-foreground py-3">
+                      <p className="text-sm">{seg.name}</p>
+                      {seg.start_time && <p className="text-xs text-muted-foreground font-normal">{seg.start_time}開始</p>}
+                    </TableCell>
+                    
+                    {/* Parallel Matches Column */}
+                    <TableCell align="center" className="py-3">
+                      <div className="inline-flex items-center gap-1 bg-white border border-border rounded-lg p-0.5 shadow-sm">
+                        <button
+                          type="button"
+                          onClick={() => setParallelMatches((prev) => ({ ...prev, [seg.id]: Math.max(0, (prev[seg.id] || 0) - 1) }))}
+                          className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min={0}
+                          max={rooms.length || 10}
+                          value={parallelMatches[seg.id] ?? 0}
+                          onChange={(e) => {
+                            const val = Math.max(0, parseInt(e.target.value) || 0);
+                            setParallelMatches((prev) => ({ ...prev, [seg.id]: val }));
+                          }}
+                          className="w-8 text-center text-sm font-semibold focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setParallelMatches((prev) => ({ ...prev, [seg.id]: Math.min(rooms.length || 10, (prev[seg.id] || 0) + 1) }))}
+                          className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </TableCell>
+                    
+                    {/* Judge Count Column */}
+                    <TableCell align="center" className="py-3">
+                      <div className="inline-flex items-center gap-1 bg-white border border-border rounded-lg p-0.5 shadow-sm">
+                        <button
+                          type="button"
+                          onClick={() => setSegmentJudgeCounts((prev) => ({ ...prev, [seg.id]: Math.max(1, (prev[seg.id] || 3) - 1) }))}
+                          className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min={1}
+                          max={5}
+                          value={segmentJudgeCounts[seg.id] ?? 3}
+                          onChange={(e) => {
+                            const val = Math.max(1, Math.min(5, parseInt(e.target.value) || 3));
+                            setSegmentJudgeCounts((prev) => ({ ...prev, [seg.id]: val }));
+                          }}
+                          className="w-8 text-center text-sm font-semibold focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setSegmentJudgeCounts((prev) => ({ ...prev, [seg.id]: Math.min(5, (prev[seg.id] || 3) + 1) }))}
+                          className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            {/* Card Footer with actions */}
+            <div className="border-t border-border p-4 bg-secondary/5 space-y-4">
+              {/* Action Buttons Row */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Button
+                    className="w-full font-semibold"
+                    onClick={handleGenerate}
+                    loading={generating}
+                    disabled={teams.length < 2}
+                  >
+                    <Icon name="auto_awesome" size={18} />
+                    <span className="ml-2">{generating ? "生成中..." : "試合の組み合わせを生成"}</span>
+                  </Button>
+                  {teams.length < 2 && (
+                    <p className="text-xs text-center text-muted-foreground mt-1">
+                      チームを2チーム以上登録すると生成できます
+                    </p>
+                  )}
+                </div>
+                
+                <div>
+                  <Button
+                    className="w-full font-semibold"
+                    variant="outlined"
+                    onClick={handleAssignJudges}
+                    loading={assigningJudges}
+                    disabled={matches.length === 0 || staffs.filter(s => s.can_be_main_judge || s.can_be_sub_judge).length === 0}
+                  >
+                    <Icon name="gavel" size={18} />
+                    <span className="ml-2">{assigningJudges ? "割り当て中..." : "審判の自動割り当て"}</span>
+                  </Button>
+                  {matches.length === 0 && (
+                    <p className="text-xs text-center text-muted-foreground mt-1">
+                      先に試合の組み合わせを生成してください
+                    </p>
+                  )}
+                </div>
               </div>
-            </label>
-          </div>
-
-          {/* Action Buttons Row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-            <div>
-              <Button
-                className="w-full font-semibold"
-                onClick={handleGenerate}
-                loading={generating}
-                disabled={teams.length < 2}
-              >
-                <Icon name="auto_awesome" size={18} />
-                <span className="ml-2">{generating ? "生成中..." : "試合の組み合わせを生成"}</span>
-              </Button>
-              {teams.length < 2 && (
-                <p className="text-xs text-center text-muted-foreground mt-1">
-                  チームを2チーム以上登録すると生成できます
-                </p>
-              )}
             </div>
-            
-            <div>
-              <Button
-                className="w-full font-semibold"
-                variant="outlined"
-                onClick={handleAssignJudges}
-                loading={assigningJudges}
-                disabled={matches.length === 0 || staffs.filter(s => s.can_be_main_judge || s.can_be_sub_judge).length === 0}
-              >
-                <Icon name="gavel" size={18} />
-                <span className="ml-2">{assigningJudges ? "割り当て中..." : "審判の自動割り当て"}</span>
-              </Button>
-              {matches.length === 0 && (
-                <p className="text-xs text-center text-muted-foreground mt-1">
-                  先に試合の組み合わせを生成してください
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
+          </CardContent>
+        )}
       </Card>
 
       {/* Match list */}
@@ -530,8 +807,8 @@ export default function ControlPage() {
               });
 
               return (
-                <Card key={seg.id} className="overflow-hidden border-border/80 shadow-sm">
-                  <CardHeader className="bg-muted/30 border-b border-border/60 py-3 flex flex-row items-center justify-between">
+                <Card key={seg.id} className="relative overflow-visible border-border/80 shadow-sm">
+                  <CardHeader className="bg-muted/30 border-b border-border/60 py-3 flex flex-row items-center justify-between rounded-t-lg">
                     <div className="flex items-center gap-2.5">
                       <div className="p-1 rounded bg-secondary/80 text-muted-foreground"><Icon name="schedule" size={16} /></div>
                       <span className="font-bold text-sm text-foreground">{seg.name}</span>
@@ -541,98 +818,23 @@ export default function ControlPage() {
                         </span>
                       )}
                     </div>
-                    <Badge variant="outline" className="bg-white border-border/80 text-xs font-semibold">{segMatches.length} 試合</Badge>
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold select-none text-muted-foreground hover:text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={segMatches.length > 0 && segMatches.every((m) => m.is_staffs_fixed)}
+                          onChange={(e) => handleToggleSegmentLock(seg.id, e.target.checked)}
+                          className="w-3.5 h-3.5 rounded accent-primary cursor-pointer"
+                        />
+                        <span>配置を確定する</span>
+                      </label>
+                      <Badge variant="outline" className="bg-white border-border/80 text-xs font-semibold">{segMatches.length} 試合</Badge>
+                    </div>
                   </CardHeader>
                   <CardContent className="p-0 bg-slate-50/30">
                     {/* Responsive View (Insuficient width / Mobile / Tablet) */}
                     <div className="xl:hidden divide-y divide-border/60">
                       {segMatches.map((m) => {
-                        const mainJudge = staffs.find((s) => s.id === m.main_judge_staff_id);
-                        const subJudge1 = staffs.find((s) => s.id === m.sub_judge1_staff_id);
-                        const subJudge2 = staffs.find((s) => s.id === m.sub_judge2_staff_id);
-                        const timekeeper = staffs.find((s) => s.id === m.timekeeper_staff_id);
-
-                        const renderStaffName = (staff: Staff | undefined, roleLabel?: string) => {
-                             if (!staff) return null;
-                             const isDuplicate = (segmentStaffAssignments[staff.id] || 0) > 1;
-
-                             const affTeam = teams.find((t) => t.id === m.aff_team_id);
-                             const negTeam = teams.find((t) => t.id === m.neg_team_id);
-                             const affSchoolId = affTeam?.event_school_id;
-                             const negSchoolId = negTeam?.event_school_id;
-
-                             const isSchoolConflict = !!(
-                               (affSchoolId && staff.interested_school_ids?.includes(affSchoolId)) ||
-                               (negSchoolId && staff.interested_school_ids?.includes(negSchoolId))
-                             );
-
-                             const sortedSegments = [...segments].sort((a, b) => {
-                               if (a.order_number !== b.order_number) {
-                                 return (a.order_number ?? 0) - (b.order_number ?? 0);
-                               }
-                               return a.id - b.id;
-                             });
-
-                             const currentSegIdx = sortedSegments.findIndex((s) => s.id === seg.id);
-                             const pastSegments = sortedSegments.slice(0, currentSegIdx);
-                             const pastSegmentIds = new Set(pastSegments.map((s) => s.id));
-                             const pastMatches = matches.filter((pastM) => pastM.event_timetable_segment_id !== null && pastSegmentIds.has(pastM.event_timetable_segment_id));
-
-                             const seenSchoolsInPast = new Set<number>();
-                             pastMatches.forEach((pastM) => {
-                               const isAssigned = (
-                                 pastM.main_judge_staff_id === staff.id ||
-                                 pastM.sub_judge1_staff_id === staff.id ||
-                                 pastM.sub_judge2_staff_id === staff.id ||
-                                 pastM.timekeeper_staff_id === staff.id
-                               );
-                               if (isAssigned && pastM.event_section_id === m.event_section_id) {
-                                 const pastAffTeam = teams.find((t) => t.id === pastM.aff_team_id);
-                                 const pastNegTeam = teams.find((t) => t.id === pastM.neg_team_id);
-                                 if (pastAffTeam?.event_school_id) seenSchoolsInPast.add(pastAffTeam.event_school_id);
-                                 if (pastNegTeam?.event_school_id) seenSchoolsInPast.add(pastNegTeam.event_school_id);
-                               }
-                             });
-
-                             const hasSeenSameSchoolInPast = !!(
-                               (affSchoolId && seenSchoolsInPast.has(affSchoolId)) ||
-                               (negSchoolId && seenSchoolsInPast.has(negSchoolId))
-                             );
-
-                             let chipClass = "bg-secondary/20 border-border/80 text-foreground font-medium";
-                             if (isDuplicate) {
-                               chipClass = "bg-red-50 border-red-200 text-red-600 font-semibold";
-                             } else if (isSchoolConflict) {
-                               chipClass = "bg-amber-50 border-amber-200 text-amber-600 font-semibold";
-                             } else if (hasSeenSameSchoolInPast) {
-                               chipClass = "bg-blue-50 border-blue-200 text-blue-600 font-semibold";
-                             }
-
-                             return (
-                               <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs shadow-xs transition-all w-[130px] min-w-[130px] shrink-0 ${chipClass}`}>
-                                 {roleLabel && (
-                                   <span className="text-[10px] font-bold text-muted-foreground/60 mr-0.5 bg-black/5 dark:bg-white/10 px-1 py-0.5 rounded shrink-0">
-                                     {roleLabel}
-                                   </span>
-                                 )}
-                                 <span className="inline-block flex-1 min-w-0 truncate align-bottom" title={staff.name}>{staff.name}</span>
-                               </span>
-                             );
-                        };
-
-                        const renderJudges = () => {
-                          const elements: React.ReactNode[] = [];
-                          if (mainJudge) elements.push(renderStaffName(mainJudge, "主"));
-                          if (subJudge1) elements.push(renderStaffName(subJudge1, "副"));
-                          if (subJudge2) elements.push(renderStaffName(subJudge2, "副"));
-                          if (elements.length === 0) return <span className="text-muted-foreground text-xs">-</span>;
-                          return (
-                            <div className="flex flex-col gap-1.5 w-fit">
-                              {elements}
-                            </div>
-                          );
-                        };
-
                         return (
                           <div key={m.id} className="p-4 space-y-3 bg-white hover:bg-slate-50/50 transition-colors">
                             {/* Row 1: 会場 部門 肯定側 vs 否定側 */}
@@ -662,13 +864,13 @@ export default function ControlPage() {
                                 {/* Referees */}
                                 <div className="space-y-1">
                                   <p className="text-[10px] text-muted-foreground/60 font-bold uppercase tracking-wider">審判</p>
-                                  {renderJudges()}
+                                  {renderJudges(m, segmentStaffAssignments, seg)}
                                 </div>
                                 {/* Timekeeper */}
                                 <div className="space-y-1">
                                   <p className="text-[10px] text-muted-foreground/60 font-bold uppercase tracking-wider">司会タイマー</p>
                                   <div>
-                                    {timekeeper ? renderStaffName(timekeeper, "計") : <span className="text-muted-foreground text-xs">-</span>}
+                                    {renderSlot(m, 'timekeeper', '計', segmentStaffAssignments, seg)}
                                   </div>
                                 </div>
                               </div>
@@ -684,7 +886,13 @@ export default function ControlPage() {
                                 {/* Change Edit */}
                                 <div className="text-center">
                                   <p className="text-[10px] text-muted-foreground/60 font-bold uppercase tracking-wider mb-0.5">変更</p>
-                                  <Button variant="ghost" size="sm" className="p-1.5 h-auto rounded-full text-primary hover:bg-primary/5 active:scale-95" onClick={() => openEdit(m)}>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="p-1.5 h-auto rounded-full text-primary hover:bg-primary/5 active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+                                    onClick={() => openEdit(m)}
+                                    disabled={m.is_staffs_fixed}
+                                  >
                                     <Icon name="tune" size={18} />
                                   </Button>
                                 </div>
@@ -697,7 +905,7 @@ export default function ControlPage() {
 
                     {/* Desktop View (Standard Table) */}
                     <div className="hidden xl:block">
-                      <Table className="border-none rounded-none">
+                      <Table className="border-none rounded-none" wrapperClassName="overflow-visible border-none rounded-none">
                         <TableHeader>
                           <TableRow hover={false}>
                             <TableHead className="pl-4 whitespace-nowrap w-fit">会場</TableHead>
@@ -713,92 +921,6 @@ export default function ControlPage() {
                         </TableHeader>
                         <TableBody>
                           {segMatches.map((m) => {
-                            const mainJudge = staffs.find((s) => s.id === m.main_judge_staff_id);
-                            const subJudge1 = staffs.find((s) => s.id === m.sub_judge1_staff_id);
-                            const subJudge2 = staffs.find((s) => s.id === m.sub_judge2_staff_id);
-                            const timekeeper = staffs.find((s) => s.id === m.timekeeper_staff_id);
-
-                            const renderStaffName = (staff: Staff | undefined, roleLabel?: string) => {
-                               if (!staff) return null;
-                               const isDuplicate = (segmentStaffAssignments[staff.id] || 0) > 1;
-
-                               const affTeam = teams.find((t) => t.id === m.aff_team_id);
-                               const negTeam = teams.find((t) => t.id === m.neg_team_id);
-                               const affSchoolId = affTeam?.event_school_id;
-                               const negSchoolId = negTeam?.event_school_id;
-
-                               const isSchoolConflict = !!(
-                                 (affSchoolId && staff.interested_school_ids?.includes(affSchoolId)) ||
-                                 (negSchoolId && staff.interested_school_ids?.includes(negSchoolId))
-                               );
-
-                               const sortedSegments = [...segments].sort((a, b) => {
-                                 if (a.order_number !== b.order_number) {
-                                   return (a.order_number ?? 0) - (b.order_number ?? 0);
-                                 }
-                                 return a.id - b.id;
-                               });
-
-                               const currentSegIdx = sortedSegments.findIndex((s) => s.id === seg.id);
-                               const pastSegments = sortedSegments.slice(0, currentSegIdx);
-                               const pastSegmentIds = new Set(pastSegments.map((s) => s.id));
-                               const pastMatches = matches.filter((pastM) => pastM.event_timetable_segment_id !== null && pastSegmentIds.has(pastM.event_timetable_segment_id));
-
-                               const seenSchoolsInPast = new Set<number>();
-                               pastMatches.forEach((pastM) => {
-                                 const isAssigned = (
-                                   pastM.main_judge_staff_id === staff.id ||
-                                   pastM.sub_judge1_staff_id === staff.id ||
-                                   pastM.sub_judge2_staff_id === staff.id ||
-                                   pastM.timekeeper_staff_id === staff.id
-                                 );
-                                 if (isAssigned && pastM.event_section_id === m.event_section_id) {
-                                   const pastAffTeam = teams.find((t) => t.id === pastM.aff_team_id);
-                                   const pastNegTeam = teams.find((t) => t.id === pastM.neg_team_id);
-                                   if (pastAffTeam?.event_school_id) seenSchoolsInPast.add(pastAffTeam.event_school_id);
-                                   if (pastNegTeam?.event_school_id) seenSchoolsInPast.add(pastNegTeam.event_school_id);
-                                 }
-                               });
-
-                               const hasSeenSameSchoolInPast = !!(
-                                 (affSchoolId && seenSchoolsInPast.has(affSchoolId)) ||
-                                 (negSchoolId && seenSchoolsInPast.has(negSchoolId))
-                               );
-
-                               let chipClass = "bg-secondary/20 border-border/80 text-foreground font-medium";
-                               if (isDuplicate) {
-                                 chipClass = "bg-red-50 border-red-200 text-red-600 font-semibold";
-                               } else if (isSchoolConflict) {
-                                 chipClass = "bg-amber-50 border-amber-200 text-amber-600 font-semibold";
-                               } else if (hasSeenSameSchoolInPast) {
-                                 chipClass = "bg-blue-50 border-blue-200 text-blue-600 font-semibold";
-                               }
-
-                               return (
-                                 <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs shadow-xs transition-all w-[130px] min-w-[130px] shrink-0 ${chipClass}`}>
-                                   {roleLabel && (
-                                     <span className="text-[10px] font-bold text-muted-foreground/60 mr-0.5 bg-black/5 dark:bg-white/10 px-1 py-0.5 rounded shrink-0">
-                                       {roleLabel}
-                                     </span>
-                                   )}
-                                   <span className="inline-block flex-1 min-w-0 truncate align-bottom" title={staff.name}>{staff.name}</span>
-                                 </span>
-                               );
-                            };
-
-                            const renderJudges = () => {
-                              const elements: React.ReactNode[] = [];
-                              if (mainJudge) elements.push(renderStaffName(mainJudge, "主"));
-                              if (subJudge1) elements.push(renderStaffName(subJudge1, "副"));
-                              if (subJudge2) elements.push(renderStaffName(subJudge2, "副"));
-                              if (elements.length === 0) return <span className="text-muted-foreground text-xs">-</span>;
-                              return (
-                                <div className="grid grid-cols-2 gap-1.5 w-fit">
-                                  {elements}
-                                </div>
-                              );
-                            };
-
                             return (
                               <TableRow key={m.id}>
                                 <TableCell className="text-sm font-medium pl-4 whitespace-nowrap w-fit">{m.room_name ?? <span className="italic text-xs text-muted-foreground">未割当</span>}</TableCell>
@@ -816,9 +938,9 @@ export default function ControlPage() {
                                 <TableCell className="font-semibold text-sm">{m.aff_team_name ?? <span className="text-muted-foreground text-xs">-</span>}</TableCell>
                                 <TableCell align="center" className="text-center font-bold text-xs text-muted-foreground/60 w-12">VS</TableCell>
                                 <TableCell className="font-semibold text-sm">{m.neg_team_name ?? <span className="text-muted-foreground text-xs">-</span>}</TableCell>
-                                <TableCell className="py-2.5">{renderJudges()}</TableCell>
+                                <TableCell className="py-2.5">{renderJudges(m, segmentStaffAssignments, seg)}</TableCell>
                                 <TableCell className="py-2.5">
-                                  {timekeeper ? renderStaffName(timekeeper, "計") : <span className="text-muted-foreground text-xs">-</span>}
+                                  {renderSlot(m, 'timekeeper', '計', segmentStaffAssignments, seg)}
                                 </TableCell>
                                 <TableCell align="center" className="text-center w-20">
                                   <span className={`text-xs font-bold ${m.is_result_confirmed ? "text-green-600" : "text-muted-foreground"}`}>
@@ -826,7 +948,13 @@ export default function ControlPage() {
                                   </span>
                                 </TableCell>
                                 <TableCell align="right" className="pr-4 text-right w-16">
-                                  <Button variant="ghost" size="sm" className="p-1.5 h-auto rounded-full text-primary hover:bg-primary/5 active:scale-95" onClick={() => openEdit(m)}>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="p-1.5 h-auto rounded-full text-primary hover:bg-primary/5 active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+                                    onClick={() => openEdit(m)}
+                                    disabled={m.is_staffs_fixed}
+                                  >
                                     <Icon name="tune" size={18} />
                                   </Button>
                                 </TableCell>

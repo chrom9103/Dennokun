@@ -54,6 +54,7 @@ class MatchListItem(BaseModel):
     aff_won: Optional[int] = None
     neg_won: Optional[int] = None
     is_result_confirmed: bool = False
+    is_staffs_fixed: bool = False
     main_judge_staff_id: Optional[int] = None
     sub_judge1_staff_id: Optional[int] = None
     sub_judge2_staff_id: Optional[int] = None

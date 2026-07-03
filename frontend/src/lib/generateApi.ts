@@ -52,6 +52,7 @@ export interface MatchAssignmentUpdate {
   timekeeper_staff_id?: number | null;
   event_section_id?: number | null;
   order_number_in_segment?: number | null;
+  is_staffs_fixed?: boolean | null;
 }
 
 export interface DashboardSummary {
@@ -102,5 +103,16 @@ export async function assignJudges(
   return apiFetch(`/api/events/${eventId}/assign-judges`, {
     method: "POST",
     body: JSON.stringify({ segment_judge_counts: segmentJudgeCounts }),
+  });
+}
+
+export async function toggleSegmentLock(
+  eventId: number,
+  segmentId: number,
+  isFixed: boolean
+): Promise<{ status: string; updated_count: number }> {
+  return apiFetch(`/api/events/${eventId}/segments/${segmentId}/lock-staffs`, {
+    method: "PUT",
+    body: JSON.stringify({ is_fixed: isFixed }),
   });
 }
