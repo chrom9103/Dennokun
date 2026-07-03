@@ -544,7 +544,7 @@ export default function ControlPage() {
     const pastSegmentIds = new Set(pastSegments.map((s) => s.id));
     const pastMatches = matches.filter((pastM) => pastM.event_timetable_segment_id !== null && pastSegmentIds.has(pastM.event_timetable_segment_id));
 
-    return candidates.map((staff) => {
+    const mapped = candidates.map((staff) => {
       const isDuplicate = matches.some((m) => {
         if (m.event_timetable_segment_id === match.event_timetable_segment_id) {
           if (m.id !== match.id) {
@@ -588,15 +588,31 @@ export default function ControlPage() {
         (negSchoolId && seenSchoolsInPast.has(negSchoolId))
       );
 
-      let category = 0;
-      if (isDuplicate) category = 3;
-      else if (isSchoolConflict) category = 2;
-      else if (hasSeenSameSchoolInPast) category = 1;
+      return {
+        staff,
+        isDuplicate,
+        isPast: hasSeenSameSchoolInPast,
+        isRelation: isSchoolConflict
+      };
+    });
 
-      return { staff, category };
-    }).sort((a, b) => {
-      if (a.category !== b.category) {
-        return a.category - b.category;
+    const getSortScore = (cand: { isDuplicate: boolean; isPast: boolean; isRelation: boolean }) => {
+      const { isDuplicate: d, isPast: p, isRelation: r } = cand;
+      if (!d && !p && !r) return 1;
+      if (d && !p && !r) return 2;
+      if (p && !d && !r) return 3;
+      if (d && p && !r) return 4;
+      if (d && r && !p) return 5;
+      if (d && p && r) return 6;
+      if (r && !d) return 7;
+      return 8;
+    };
+
+    return mapped.sort((a, b) => {
+      const scoreA = getSortScore(a);
+      const scoreB = getSortScore(b);
+      if (scoreA !== scoreB) {
+        return scoreA - scoreB;
       }
       return a.staff.id - b.staff.id;
     });
@@ -729,9 +745,9 @@ export default function ControlPage() {
               </button>
 
               {getSortedCandidates(match, role, segmentStaffAssignments, seg).map((cand) => {
-                const candColorClass = cand.category === 3 ? "bg-red-50 text-red-700 hover:bg-red-100" :
-                                       cand.category === 2 ? "bg-amber-50 text-amber-700 hover:bg-amber-100" :
-                                       cand.category === 1 ? "bg-blue-50 text-blue-700 hover:bg-blue-100" :
+                const candColorClass = cand.isDuplicate ? "bg-red-50 text-red-700 hover:bg-red-100" :
+                                       cand.isRelation ? "bg-amber-50 text-amber-700 hover:bg-amber-100" :
+                                       cand.isPast ? "bg-blue-50 text-blue-700 hover:bg-blue-100" :
                                        "hover:bg-secondary/40 text-foreground";
                 return (
                   <button
@@ -745,11 +761,23 @@ export default function ControlPage() {
                     className={`w-full text-left px-3 py-1.5 text-xs transition-colors flex items-center justify-between ${candColorClass}`}
                   >
                     <span className="font-semibold truncate mr-2">{cand.staff.name}</span>
-                    {cand.category > 0 && (
-                      <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-white/60 border border-current shrink-0">
-                        {cand.category === 3 ? "重複" : cand.category === 2 ? "関係校" : "過去"}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1 shrink-0">
+                      {cand.isDuplicate && (
+                        <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-white/60 border border-red-300 text-red-700 shrink-0">
+                          重複
+                        </span>
+                      )}
+                      {cand.isRelation && (
+                        <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-white/60 border border-amber-300 text-amber-700 shrink-0">
+                          関係
+                        </span>
+                      )}
+                      {cand.isPast && (
+                        <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-white/60 border border-blue-300 text-blue-700 shrink-0">
+                          過去
+                        </span>
+                      )}
+                    </div>
                   </button>
                 );
               })}
