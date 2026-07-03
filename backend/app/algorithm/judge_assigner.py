@@ -1,214 +1,181 @@
 """
 judge_assigner.py — ジャッジ割当ロジック
 ==========================================
-
-【現在の実装】
-  試合ごとに利用可能なジャッジ・司会タイマーを割り当てる。
-  制約:
-    1. can_be_main_judge/can_be_sub_judge/can_be_timekeeper フラグ
-    2. 同一試合の両チームに対して interested_school_ids に含まれるジャッジは除外
-    3. 同一時間枠での重複割当は避ける
-    4. 担当数の均等化（最少担当のジャッジを優先）
-
-【将来の最適化について】
-  assign_judges() の入出力インターフェースを維持したまま、
-  制約充足ソルバー（OR-Tools 等）への置き換えが可能。
-
-【入力】
-  matches: list[dict]  — スロット割当済みの対戦ペア（aff_team_id, neg_team_id 等）
-  staffs: list[dict]   — event_staffs テーブルの行（+ interested_school_ids, present_segment_ids）
-  teams: list[dict]    — event_teams テーブル of id, event_school_id
-  judges_per_match: int — 1試合あたりのジャッジ数（通常3）
-
-【出力】
-  matches に main_judge_staff_id, sub_judge1_staff_id, sub_judge2_staff_id,
-  timekeeper_staff_id, judges_assignment_count を追加したもの。
 """
 
 from __future__ import annotations
 import random
-
 
 def assign_judges(
     matches: list[dict],
     staffs: list[dict],
     teams: list[dict],
     judges_per_match: int | dict[int, int] = 3,
-) -> list[dict]:
+) -> tuple[list[dict], str | None]:
     """
     試合リストにジャッジ（主審・副審）および司会タイマーを割り当てる。
+    制約:
+      1. 赤: 同一時間枠内での同一スタッフ의重複割り当て禁止
+      2. 黄: 利害関係校の試合へのアサイン禁止
+      3. 青: 同一部門（セクション）において、過去に担当したことのある学校の試合へのアサイン禁止
     """
     # チームID → 学校IDのマップ
     team_school_map: dict[int, int | None] = {
         t["id"]: t.get("event_school_id") for t in teams
     }
 
-    # ジャッジ・スタッフの担当カウント
-    judge_assignment_count: dict[int, int] = {s["id"]: 0 for s in staffs}
+    # Group matches by segment
+    seg_matches = {}
+    for m in matches:
+        seg_id = m.get("event_timetable_segment_id")
+        if seg_id not in seg_matches:
+            seg_matches[seg_id] = []
+        seg_matches[seg_id].append(m)
 
-    # 時間枠ごとの割当済みジャッジID（同一時間枠での重複防止）
-    segment_judge_used: dict[int | None, set[int]] = {}
+    # Sort segments by segment_order, then id
+    def get_seg_sort_key(sid):
+        m_list = seg_matches[sid]
+        first_m = m_list[0] if m_list else {}
+        order = first_m.get("segment_order")
+        if order is None:
+            order = 999999
+        return (order, sid)
 
-    for match in matches:
-        seg_id = match.get("event_timetable_segment_id")
-        if seg_id not in segment_judge_used:
-            segment_judge_used[seg_id] = set()
+    sorted_seg_ids = sorted(seg_matches.keys(), key=get_seg_sort_key)
 
-        # Determine judges count for this segment dynamically
-        j_count = 3
-        if isinstance(judges_per_match, dict):
-            if seg_id is not None:
-                j_count = judges_per_match.get(seg_id, 3)
-        else:
-            j_count = judges_per_match
+    def try_assignment(ignore_blue=False) -> list[dict] | None:
+        judge_assignment_count = {s["id"]: 0 for s in staffs}
+        past_schools_by_staff_section: dict[tuple[int, int], set[int]] = {}
 
-        # この試合に関係する学校IDを収集
-        involved_school_ids: set[int] = set()
-        for tid in [match.get("aff_team_id"), match.get("neg_team_id")]:
-            if tid:
-                school_id = team_school_map.get(tid)
-                if school_id:
-                    involved_school_ids.add(school_id)
+        assigned_matches = []
 
-        assigned_ids = []
+        for seg_id in sorted_seg_ids:
+            segment_used = set()
+            segment_matches = seg_matches[seg_id]
+            
+            # Copy to avoid mutating original dictionary until success
+            shuffled_matches = [dict(m) for m in segment_matches]
+            # Randomize the match assignment order within the segment to explore different choices
+            random.shuffle(shuffled_matches)
 
-        # 1. 主審の選出
-        main_judge = _pick_main_judge(
-            staffs=staffs,
-            involved_school_ids=involved_school_ids,
-            segment_used=segment_judge_used.get(seg_id, set()),
-            assignment_count=judge_assignment_count,
-        )
+            for match in shuffled_matches:
+                j_count = 3
+                if isinstance(judges_per_match, dict):
+                    j_count = judges_per_match.get(seg_id, 3)
+                else:
+                    j_count = judges_per_match
 
-        if main_judge:
-            assigned_ids.append(main_judge["id"])
-            judge_assignment_count[main_judge["id"]] += 1
-            segment_judge_used[seg_id].add(main_judge["id"])
-            match["main_judge_staff_id"] = main_judge["id"]
-        else:
-            match["main_judge_staff_id"] = None
+                aff_team_id = match.get("aff_team_id")
+                neg_team_id = match.get("neg_team_id")
+                aff_school_id = team_school_map.get(aff_team_id) if aff_team_id else None
+                neg_school_id = team_school_map.get(neg_team_id) if neg_team_id else None
+                involved_school_ids = {aff_school_id, neg_school_id} - {None}
+                section_id = match.get("event_section_id")
 
-        # 2. 副審の選出 (j_count - 1 人)
-        sub_judges_to_pick = max(0, j_count - 1)
-        sub_judges = _pick_sub_judges(
-            staffs=staffs,
-            count=sub_judges_to_pick,
-            involved_school_ids=involved_school_ids,
-            segment_used=segment_judge_used.get(seg_id, set()),
-            assignment_count=judge_assignment_count,
-        )
+                def get_candidates(role_flag):
+                    candidates = []
+                    for s in staffs:
+                        if not s.get(role_flag):
+                            continue
+                        if s["id"] in segment_used:
+                            continue
+                        interested = s.get("interested_school_ids") or []
+                        if any(sid in involved_school_ids for sid in interested):
+                            continue
+                        if not ignore_blue and section_id is not None:
+                            seen = past_schools_by_staff_section.get((s["id"], section_id), set())
+                            if any(sid in involved_school_ids for sid in seen):
+                                continue
+                        candidates.append(s)
+                    return candidates
 
-        for i, sj in enumerate(sub_judges):
-            assigned_ids.append(sj["id"])
-            judge_assignment_count[sj["id"]] += 1
-            segment_judge_used[seg_id].add(sj["id"])
-            if i == 0:
-                match["sub_judge1_staff_id"] = sj["id"]
-            elif i == 1:
-                match["sub_judge2_staff_id"] = sj["id"]
+                # 1. Main Judge
+                main_judge = None
+                if j_count >= 1:
+                    candidates = get_candidates("can_be_main_judge")
+                    if not candidates:
+                        return None
+                    min_count = min(judge_assignment_count[c["id"]] for c in candidates)
+                    best_candidates = [c for c in candidates if judge_assignment_count[c["id"]] == min_count]
+                    main_judge = random.choice(best_candidates)
+                    
+                    match["main_judge_staff_id"] = main_judge["id"]
+                    segment_used.add(main_judge["id"])
+                    judge_assignment_count[main_judge["id"]] += 1
+                else:
+                    match["main_judge_staff_id"] = None
 
-        if len(sub_judges) < 1:
-            match["sub_judge1_staff_id"] = None
-        if len(sub_judges) < 2:
-            match["sub_judge2_staff_id"] = None
+                # 2. Sub Judges
+                sub_judges_to_pick = max(0, j_count - 1)
+                sub_judge_ids = []
+                for _ in range(sub_judges_to_pick):
+                    candidates = get_candidates("can_be_sub_judge")
+                    if not candidates:
+                        return None
+                    min_count = min(judge_assignment_count[c["id"]] for c in candidates)
+                    best_candidates = [c for c in candidates if judge_assignment_count[c["id"]] == min_count]
+                    picked = random.choice(best_candidates)
+                    
+                    sub_judge_ids.append(picked["id"])
+                    segment_used.add(picked["id"])
+                    judge_assignment_count[picked["id"]] += 1
 
-        # 3. 司会タイマーの選出 (1名)
-        timekeeper = _pick_timekeeper(
-            staffs=staffs,
-            involved_school_ids=involved_school_ids,
-            segment_used=segment_judge_used.get(seg_id, set()),
-            assignment_count=judge_assignment_count,
-        )
+                match["sub_judge1_staff_id"] = sub_judge_ids[0] if len(sub_judge_ids) > 0 else None
+                match["sub_judge2_staff_id"] = sub_judge_ids[1] if len(sub_judge_ids) > 1 else None
 
-        if timekeeper:
-            assigned_ids.append(timekeeper["id"])
-            judge_assignment_count[timekeeper["id"]] += 1
-            segment_judge_used[seg_id].add(timekeeper["id"])
-            match["timekeeper_staff_id"] = timekeeper["id"]
-        else:
-            match["timekeeper_staff_id"] = None
+                # 3. Timekeeper
+                candidates = get_candidates("can_be_timekeeper")
+                if not candidates:
+                    return None
+                min_count = min(judge_assignment_count[c["id"]] for c in candidates)
+                best_candidates = [c for c in candidates if judge_assignment_count[c["id"]] == min_count]
+                timekeeper = random.choice(best_candidates)
+                
+                match["timekeeper_staff_id"] = timekeeper["id"]
+                segment_used.add(timekeeper["id"])
+                judge_assignment_count[timekeeper["id"]] += 1
 
-        match["judges_assignment_count"] = len(assigned_ids)
+                match["judges_assignment_count"] = (1 if main_judge else 0) + len(sub_judge_ids) + 1
 
-    return matches
+                # Update seen schools for all assigned staff in this match
+                assigned_ids_for_match = [match["timekeeper_staff_id"]]
+                if main_judge:
+                    assigned_ids_for_match.append(match["main_judge_staff_id"])
+                assigned_ids_for_match.extend(sub_judge_ids)
 
+                if section_id is not None:
+                    for sid in assigned_ids_for_match:
+                        if (sid, section_id) not in past_schools_by_staff_section:
+                            past_schools_by_staff_section[(sid, section_id)] = set()
+                        if aff_school_id:
+                            past_schools_by_staff_section[(sid, section_id)].add(aff_school_id)
+                        if neg_school_id:
+                            past_schools_by_staff_section[(sid, section_id)].add(neg_school_id)
 
-# ─── Private helpers ──────────────────────────────────────────────────────────
+                assigned_matches.append(match)
 
-def _pick_main_judge(
-    staffs: list[dict],
-    involved_school_ids: set[int],
-    segment_used: set[int],
-    assignment_count: dict[int, int],
-) -> dict | None:
-    """条件を満たす主審可能なスタッフから、担当回数の最も少ない者を1名選出する。"""
-    candidates = []
-    for s in staffs:
-        if s["id"] in segment_used:
-            continue
-        if not s.get("can_be_main_judge"):
-            continue
-        interested = s.get("interested_school_ids") or []
-        if any(sid in involved_school_ids for sid in interested):
-            continue
-        candidates.append(s)
+        return assigned_matches
 
-    if not candidates:
-        return None
+    # Try assignment with strict constraints first (Red, Yellow, Blue)
+    max_strict_attempts = 1500
+    for _ in range(max_strict_attempts):
+        res = try_assignment(ignore_blue=False)
+        if res is not None:
+            # Map back to original list format to preserve match order
+            match_dict = {m["id"]: m for m in res}
+            ordered_matches = [match_dict.get(orig_m["id"], orig_m) for orig_m in matches]
+            return ordered_matches, None
 
-    random.shuffle(candidates)
-    candidates.sort(key=lambda s: assignment_count.get(s["id"], 0))
-    return candidates[0]
+    # Try assignment with ignore_blue = True
+    max_loose_attempts = 1500
+    for _ in range(max_loose_attempts):
+        res = try_assignment(ignore_blue=True)
+        if res is not None:
+            match_dict = {m["id"]: m for m in res}
+            ordered_matches = [match_dict.get(orig_m["id"], orig_m) for orig_m in matches]
+            warning = "制約（赤・黄・青）をすべて満たす割り当てが見つかりませんでした。過去担当校の再審判禁止（青）の制約を緩和したパターンを表示しています。"
+            return ordered_matches, warning
 
-
-def _pick_sub_judges(
-    staffs: list[dict],
-    count: int,
-    involved_school_ids: set[int],
-    segment_used: set[int],
-    assignment_count: dict[int, int],
-) -> list[dict]:
-    """条件を満たす副審可能なスタッフから、担当回数の最も少ない者を優先して count 人選出する。"""
-    candidates = []
-    for s in staffs:
-        if s["id"] in segment_used:
-            continue
-        if not s.get("can_be_sub_judge"):
-            continue
-        interested = s.get("interested_school_ids") or []
-        if any(sid in involved_school_ids for sid in interested):
-            continue
-        candidates.append(s)
-
-    if not candidates:
-        return []
-
-    random.shuffle(candidates)
-    candidates.sort(key=lambda s: assignment_count.get(s["id"], 0))
-    return candidates[:count]
-
-
-def _pick_timekeeper(
-    staffs: list[dict],
-    involved_school_ids: set[int],
-    segment_used: set[int],
-    assignment_count: dict[int, int],
-) -> dict | None:
-    """条件を満たす司会タイマー可能なスタッフから、担当回数の最も少ない者を1名選出する。"""
-    candidates = []
-    for s in staffs:
-        if s["id"] in segment_used:
-            continue
-        if not s.get("can_be_timekeeper"):
-            continue
-        interested = s.get("interested_school_ids") or []
-        if any(sid in involved_school_ids for sid in interested):
-            continue
-        candidates.append(s)
-
-    if not candidates:
-        return None
-
-    random.shuffle(candidates)
-    candidates.sort(key=lambda s: assignment_count.get(s["id"], 0))
-    return candidates[0]
+    # Fallback to no-assignment or partial assignment if completely impossible
+    warning = "スタッフ数または担当可能時間の不足により、制約を満たす審判アサインメントを生成できませんでした。"
+    return matches, warning

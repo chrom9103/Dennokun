@@ -178,7 +178,7 @@ async def assign_judges_endpoint(event_id: int, req: AssignJudgesRequest):
             )
 
         # 既存の試合データを基にジャッジを割り当てる
-        assigned_matches = assign_judges(
+        assigned_matches, warning = assign_judges(
             matches=matches,
             staffs=judge_staffs,
             teams=teams,
@@ -188,7 +188,7 @@ async def assign_judges_endpoint(event_id: int, req: AssignJudgesRequest):
         # 更新を保存
         await bulk_update_match_judges(assigned_matches)
 
-        return {"status": "ok", "updated_count": len(assigned_matches)}
+        return {"status": "ok", "updated_count": len(assigned_matches), "warning": warning}
 
     except HTTPException:
         raise

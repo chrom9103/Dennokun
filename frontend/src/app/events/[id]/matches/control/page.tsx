@@ -75,7 +75,7 @@ export default function ControlPage() {
 
   // Judge Assignment
   const [assigningJudges, setAssigningJudges] = useState(false);
-  const [judgeResult, setJudgeResult] = useState<{ status: string; updated_count: number } | null>(null);
+  const [judgeResult, setJudgeResult] = useState<{ status: string; updated_count: number; warning?: string } | null>(null);
 
   // Delete
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -301,11 +301,17 @@ export default function ControlPage() {
       )}
 
       {judgeResult && (
-        <div className="px-4 py-3 rounded-lg bg-green-50 border border-green-200 text-green-800 text-sm">
+        <div className="px-4 py-3 rounded-lg bg-green-50 border border-green-200 text-green-800 text-sm space-y-1.5">
           <p className="font-semibold flex items-center gap-1.5">
             <Icon name="check_circle" size={18} />
             {judgeResult.updated_count}件の試合に審判を自動割り当てしました
           </p>
+          {judgeResult.warning && (
+            <p className="text-amber-700 font-medium flex items-start gap-1.5 mt-1 bg-amber-50/50 p-2 rounded border border-amber-200/50">
+              <Icon name="warning" size={16} className="mt-0.5 shrink-0" />
+              <span>{judgeResult.warning}</span>
+            </p>
+          )}
         </div>
       )}
 
