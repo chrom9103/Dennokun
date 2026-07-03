@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Card, CardHeader, CardContent } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
@@ -89,56 +89,104 @@ export default function ControlPage() {
   const [fSegment, setFSegment] = useState("all");
   const [fSection, setFSection] = useState("all");
 
-  const load = useCallback(async () => {
+  // Scroll Restorer to prevent page jumping during silent updates
+  const mainScrollRef = useRef<number>(0);
+
+  useEffect(() => {
+    const mainEl = document.querySelector('main');
+    if (!mainEl) return;
+
+    const handleScroll = () => {
+      mainScrollRef.current = mainEl.scrollTop;
+    };
+
+    mainEl.addEventListener('scroll', handleScroll);
+    return () => mainEl.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const mainEl = document.querySelector('main');
+    if (mainEl && mainEl.scrollTop !== mainScrollRef.current) {
+      mainEl.scrollTop = mainScrollRef.current;
+      const rafId = requestAnimationFrame(() => {
+        if (mainEl.scrollTop !== mainScrollRef.current) {
+          mainEl.scrollTop = mainScrollRef.current;
+        }
+      });
+      return () => cancelAnimationFrame(rafId);
+    }
+  }, [matches]);
+
+  const load = useCallback(async (silent = false) => {
     if (!eventId) return;
     try {
-      setLoading(true);
-      setError(null);
-      const [matchesData, summaryData, teamsData, sectionsData, roomsData, segsData, staffsData] = await Promise.all([
-        fetchMatches(eventId),
-        fetchMatchSummary(eventId),
-        fetchTeams(eventId),
-        fetchSections(eventId),
-        fetchRooms(eventId),
-        fetchTimetableSegments(eventId),
-        fetchStaffs(eventId),
-      ]);
-      setMatches(matchesData);
-      setSummary(summaryData);
-      setTeams(teamsData);
-      setSections(sectionsData);
-      setRooms(roomsData);
-      setSegments(segsData);
-      setStaffs(staffsData);
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+        const [matchesData, summaryData, teamsData, sectionsData, roomsData, segsData, staffsData] = await Promise.all([
+          fetchMatches(eventId),
+          fetchMatchSummary(eventId),
+          fetchTeams(eventId),
+          fetchSections(eventId),
+          fetchRooms(eventId),
+          fetchTimetableSegments(eventId),
+          fetchStaffs(eventId),
+        ]);
+        setMatches(matchesData);
+        setSummary(summaryData);
+        setTeams(teamsData);
+        setSections(sectionsData);
+        setRooms(roomsData);
+        setSegments(segsData);
+        setStaffs(staffsData);
 
-      // Initialize parallel matches per segment if not set
-      setParallelMatches((prev) => {
-        const next = { ...prev };
-        segsData.forEach((s) => {
-          if (next[s.id] === undefined) {
-            // デフォルトは会場数 roomsData.length の範囲内で2にするか、会場数が少なければそれに合わせる
-            next[s.id] = Math.min(2, roomsData.length || 2);
-          }
+        // Initialize parallel matches per segment if not set
+        setParallelMatches((prev) => {
+          const next = { ...prev };
+          segsData.forEach((s) => {
+            if (next[s.id] === undefined) {
+              next[s.id] = Math.min(2, roomsData.length || 2);
+            }
+          });
+          return next;
         });
-        return next;
-      });
 
-      // Initialize judge counts per segment if not set
-      setSegmentJudgeCounts((prev) => {
-        const next = { ...prev };
-        segsData.forEach((s) => {
-          if (next[s.id] === undefined) {
-            next[s.id] = 3; // デフォルトジャッジ数3
-          }
+        // Initialize judge counts per segment if not set
+        setSegmentJudgeCounts((prev) => {
+          const next = { ...prev };
+          segsData.forEach((s) => {
+            if (next[s.id] === undefined) {
+              next[s.id] = 3;
+            }
+          });
+          return next;
         });
-        return next;
-      });
+      } else {
+        // Silent load: ONLY load matches and summary to prevent scroll resetting
+        const mainEl = document.querySelector('main');
+        const scrollTop = mainEl ? mainEl.scrollTop : null;
 
+        const [matchesData, summaryData] = await Promise.all([
+          fetchMatches(eventId),
+          fetchMatchSummary(eventId),
+        ]);
+        setMatches(matchesData);
+        setSummary(summaryData);
 
+        if (mainEl && scrollTop !== null) {
+          setTimeout(() => {
+            mainEl.scrollTop = scrollTop;
+          }, 0);
+        }
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "データの取得に失敗しました");
+      if (!silent) {
+        setError(e instanceof Error ? e.message : "データの取得に失敗しました");
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, [eventId]);
 
@@ -313,6 +361,43 @@ export default function ControlPage() {
                            targetRole === 'sub2' ? targetMatch.sub_judge2_staff_id :
                            targetMatch.timekeeper_staff_id;
 
+      // Optimistic local update
+      setMatches((prev) =>
+        prev.map((m) => {
+          if (m.id === sourceMatchId && m.id === targetMatchId) {
+            const updated = { ...m };
+            const sourceKey = sourceRole === 'main' ? 'main_judge_staff_id' :
+                              sourceRole === 'sub1' ? 'sub_judge1_staff_id' :
+                              sourceRole === 'sub2' ? 'sub_judge2_staff_id' :
+                              'timekeeper_staff_id';
+            const targetKey = targetRole === 'main' ? 'main_judge_staff_id' :
+                              targetRole === 'sub1' ? 'sub_judge1_staff_id' :
+                              targetRole === 'sub2' ? 'sub_judge2_staff_id' :
+                              'timekeeper_staff_id';
+            updated[sourceKey] = targetStaffId;
+            updated[targetKey] = sourceStaffId;
+            return updated;
+          } else if (m.id === sourceMatchId) {
+            const updated = { ...m };
+            const sourceKey = sourceRole === 'main' ? 'main_judge_staff_id' :
+                              sourceRole === 'sub1' ? 'sub_judge1_staff_id' :
+                              sourceRole === 'sub2' ? 'sub_judge2_staff_id' :
+                              'timekeeper_staff_id';
+            updated[sourceKey] = targetStaffId;
+            return updated;
+          } else if (m.id === targetMatchId) {
+            const updated = { ...m };
+            const targetKey = targetRole === 'main' ? 'main_judge_staff_id' :
+                              targetRole === 'sub1' ? 'sub_judge1_staff_id' :
+                              targetRole === 'sub2' ? 'sub_judge2_staff_id' :
+                              'timekeeper_staff_id';
+            updated[targetKey] = sourceStaffId;
+            return updated;
+          }
+          return m;
+        })
+      );
+
       if (sourceMatchId === targetMatchId) {
         const update: Record<string, number | null> = {};
         const sourceKey = sourceRole === 'main' ? 'main_judge_staff_id' :
@@ -350,24 +435,47 @@ export default function ControlPage() {
         ]);
       }
 
-      await load();
+      await load(true);
     } catch (err) {
       alert(err instanceof Error ? err.message : "入れ替えに失敗しました");
+      await load();
     }
   }
 
   async function handleToggleSegmentLock(segmentId: number, isFixed: boolean) {
     if (!eventId) return;
+    setMatches((prev) =>
+      prev.map((m) => {
+        if (m.event_timetable_segment_id === segmentId) {
+          return { ...m, is_staffs_fixed: isFixed };
+        }
+        return m;
+      })
+    );
     try {
       await toggleSegmentLock(eventId, segmentId, isFixed);
-      await load();
+      await load(true);
     } catch (e) {
       alert(e instanceof Error ? e.message : "確定状態の更新に失敗しました");
+      await load();
     }
   }
 
   async function handleUpdateRole(matchId: number, role: string, staffId: number | null) {
     if (!eventId) return;
+    setMatches((prev) =>
+      prev.map((m) => {
+        if (m.id === matchId) {
+          const updated = { ...m };
+          if (role === 'main') updated.main_judge_staff_id = staffId;
+          if (role === 'sub1') updated.sub_judge1_staff_id = staffId;
+          if (role === 'sub2') updated.sub_judge2_staff_id = staffId;
+          if (role === 'timekeeper') updated.timekeeper_staff_id = staffId;
+          return updated;
+        }
+        return m;
+      })
+    );
     try {
       const update: Record<string, number | null> = {};
       if (role === 'main') update.main_judge_staff_id = staffId;
@@ -376,9 +484,10 @@ export default function ControlPage() {
       if (role === 'timekeeper') update.timekeeper_staff_id = staffId;
 
       await updateMatchAssignment(eventId, matchId, update);
-      await load();
+      await load(true);
     } catch (e) {
       alert(e instanceof Error ? e.message : "更新に失敗しました");
+      await load();
     }
   }
 
@@ -662,7 +771,7 @@ export default function ControlPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outlined" size="sm" icon="refresh" onClick={load}>更新</Button>
+          <Button variant="outlined" size="sm" icon="refresh" onClick={() => load()}>更新</Button>
           {matches.length > 0 && (
             <Button variant="destructive" size="sm" icon="delete_sweep" onClick={() => setShowDeleteConfirm(true)}>
               全試合削除
