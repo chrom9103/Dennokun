@@ -258,6 +258,104 @@ export default function ControlPage() {
   const [activeDropdown, setActiveDropdown] = useState<{ matchId: number; role: 'main' | 'sub1' | 'sub2' | 'timekeeper' } | null>(null);
   const [isParamsOpen, setIsParamsOpen] = useState(false);
 
+  const [dragOverTarget, setDragOverTarget] = useState<{ matchId: number; role: 'main' | 'sub1' | 'sub2' | 'timekeeper' } | null>(null);
+
+  function handleDragStart(e: React.DragEvent, matchId: number, role: 'main' | 'sub1' | 'sub2' | 'timekeeper') {
+    e.dataTransfer.setData("text/plain", JSON.stringify({ matchId, role }));
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function handleDragOver(e: React.DragEvent, isLocked: boolean) {
+    if (isLocked) return;
+    e.preventDefault();
+  }
+
+  function handleDragEnter(e: React.DragEvent, matchId: number, role: 'main' | 'sub1' | 'sub2' | 'timekeeper', isLocked: boolean) {
+    if (isLocked) return;
+    e.preventDefault();
+    setDragOverTarget({ matchId, role });
+  }
+
+  function handleDragLeave() {
+    setDragOverTarget(null);
+  }
+
+  async function handleDrop(e: React.DragEvent, targetMatchId: number, targetRole: 'main' | 'sub1' | 'sub2' | 'timekeeper', targetLocked: boolean) {
+    e.preventDefault();
+    setDragOverTarget(null);
+    if (targetLocked) return;
+
+    try {
+      const dataStr = e.dataTransfer.getData("text/plain");
+      if (!dataStr) return;
+      const { matchId: sourceMatchId, role: sourceRole } = JSON.parse(dataStr) as {
+        matchId: number;
+        role: 'main' | 'sub1' | 'sub2' | 'timekeeper';
+      };
+
+      if (sourceMatchId === targetMatchId && sourceRole === targetRole) return;
+
+      const sourceMatch = matches.find((m) => m.id === sourceMatchId);
+      const targetMatch = matches.find((m) => m.id === targetMatchId);
+      if (!sourceMatch || !targetMatch) return;
+      if (sourceMatch.is_staffs_fixed || targetMatch.is_staffs_fixed) {
+        alert("確定されている時間枠の審判は移動・入れ替えできません。");
+        return;
+      }
+
+      const sourceStaffId = sourceRole === 'main' ? sourceMatch.main_judge_staff_id :
+                           sourceRole === 'sub1' ? sourceMatch.sub_judge1_staff_id :
+                           sourceRole === 'sub2' ? sourceMatch.sub_judge2_staff_id :
+                           sourceMatch.timekeeper_staff_id;
+
+      const targetStaffId = targetRole === 'main' ? targetMatch.main_judge_staff_id :
+                           targetRole === 'sub1' ? targetMatch.sub_judge1_staff_id :
+                           targetRole === 'sub2' ? targetMatch.sub_judge2_staff_id :
+                           targetMatch.timekeeper_staff_id;
+
+      if (sourceMatchId === targetMatchId) {
+        const update: Record<string, number | null> = {};
+        const sourceKey = sourceRole === 'main' ? 'main_judge_staff_id' :
+                          sourceRole === 'sub1' ? 'sub_judge1_staff_id' :
+                          sourceRole === 'sub2' ? 'sub_judge2_staff_id' :
+                          'timekeeper_staff_id';
+        const targetKey = targetRole === 'main' ? 'main_judge_staff_id' :
+                          targetRole === 'sub1' ? 'sub_judge1_staff_id' :
+                          targetRole === 'sub2' ? 'sub_judge2_staff_id' :
+                          'timekeeper_staff_id';
+
+        update[sourceKey] = targetStaffId;
+        update[targetKey] = sourceStaffId;
+
+        await updateMatchAssignment(eventId!, sourceMatchId, update);
+      } else {
+        const updateSource: Record<string, number | null> = {};
+        const updateTarget: Record<string, number | null> = {};
+
+        const sourceKey = sourceRole === 'main' ? 'main_judge_staff_id' :
+                          sourceRole === 'sub1' ? 'sub_judge1_staff_id' :
+                          sourceRole === 'sub2' ? 'sub_judge2_staff_id' :
+                          'timekeeper_staff_id';
+        const targetKey = targetRole === 'main' ? 'main_judge_staff_id' :
+                          targetRole === 'sub1' ? 'sub_judge1_staff_id' :
+                          targetRole === 'sub2' ? 'sub_judge2_staff_id' :
+                          'timekeeper_staff_id';
+
+        updateSource[sourceKey] = targetStaffId;
+        updateTarget[targetKey] = sourceStaffId;
+
+        await Promise.all([
+          updateMatchAssignment(eventId!, sourceMatchId, updateSource),
+          updateMatchAssignment(eventId!, targetMatchId, updateTarget)
+        ]);
+      }
+
+      await load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "入れ替えに失敗しました");
+    }
+  }
+
   async function handleToggleSegmentLock(segmentId: number, isFixed: boolean) {
     if (!eventId) return;
     try {
@@ -447,17 +545,29 @@ export default function ControlPage() {
       }
     };
 
+    const isDragOver = dragOverTarget?.matchId === match.id && dragOverTarget?.role === role;
+
     return (
-      <div className="relative inline-block text-left">
+      <div
+        className="relative inline-block text-left"
+        onDragOver={(e) => handleDragOver(e, isLocked)}
+        onDragEnter={(e) => handleDragEnter(e, match.id, role, isLocked)}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => handleDrop(e, match.id, role, isLocked)}
+      >
         <span
           onClick={handleClick}
+          draggable={!isLocked && !!staff}
+          onDragStart={(e) => handleDragStart(e, match.id, role)}
           className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs shadow-xs transition-all w-[130px] min-w-[130px] shrink-0 select-none
-            ${isLocked ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover:shadow-sm active:scale-98'} ${chipClass}`}
+            ${isLocked ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover:shadow-sm active:scale-98'}
+            ${isDragOver ? 'ring-2 ring-primary border-primary bg-primary/10 scale-102 shadow-md' : ''}
+            ${chipClass}`}
         >
-          <span className="text-[10px] font-bold text-muted-foreground/60 mr-0.5 bg-black/5 dark:bg-white/10 px-1 py-0.5 rounded shrink-0">
+          <span className="text-[10px] font-bold text-muted-foreground/60 mr-0.5 bg-black/5 dark:bg-white/10 px-1 py-0.5 rounded shrink-0 pointer-events-none">
             {label}
           </span>
-          <span className="inline-block flex-1 min-w-0 truncate align-bottom text-left" title={staff?.name || "未設定"}>
+          <span className="inline-block flex-1 min-w-0 truncate align-bottom text-left pointer-events-none" title={staff?.name || "未設定"}>
             {staff?.name || "未設定"}
           </span>
         </span>
