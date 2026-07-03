@@ -145,7 +145,12 @@ export default function ControlPage() {
           const next = { ...prev };
           segsData.forEach((s) => {
             if (next[s.id] === undefined) {
-              next[s.id] = Math.min(2, roomsData.length || 2);
+              const segMatches = matchesData.filter(m => m.event_timetable_segment_id === s.id);
+              if (segMatches.length > 0) {
+                next[s.id] = segMatches.length;
+              } else {
+                next[s.id] = Math.min(2, roomsData.length || 2);
+              }
             }
           });
           return next;
@@ -156,7 +161,32 @@ export default function ControlPage() {
           const next = { ...prev };
           segsData.forEach((s) => {
             if (next[s.id] === undefined) {
-              next[s.id] = 3;
+              const segMatches = matchesData.filter(m => m.event_timetable_segment_id === s.id);
+              if (segMatches.length > 0) {
+                let maxAssignedCount = 0;
+                segMatches.forEach((m) => {
+                  let count = 0;
+                  if (m.main_judge_staff_id != null) count = 1;
+                  if (m.sub_judge1_staff_id != null) count = 2;
+                  if (m.sub_judge2_staff_id != null) count = 3;
+                  if (count > maxAssignedCount) {
+                    maxAssignedCount = count;
+                  }
+                });
+
+                if (maxAssignedCount > 0) {
+                  next[s.id] = maxAssignedCount;
+                } else {
+                  const firstWithCount = segMatches.find(m => m.judges_assignment_count != null && m.judges_assignment_count > 0);
+                  if (firstWithCount && firstWithCount.judges_assignment_count != null) {
+                    next[s.id] = firstWithCount.judges_assignment_count;
+                  } else {
+                    next[s.id] = 3;
+                  }
+                }
+              } else {
+                next[s.id] = 3;
+              }
             }
           });
           return next;
@@ -732,7 +762,7 @@ export default function ControlPage() {
 
   const renderJudges = (m: MatchListItem, segmentStaffAssignments: Record<number, number>, seg: any) => {
     const segId = m.event_timetable_segment_id;
-    const expectedJudgeCount = (segId !== null ? segmentJudgeCounts[segId] : null) ?? m.judges_assignment_count ?? 3;
+    const expectedJudgeCount = (segId !== null ? segmentJudgeCounts[segId] : null) ?? (m.judges_assignment_count || 3);
 
     const elements = [];
     if (expectedJudgeCount >= 1) {
