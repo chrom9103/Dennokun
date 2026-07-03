@@ -11,11 +11,12 @@ def assign_judges(
     staffs: list[dict],
     teams: list[dict],
     judges_per_match: int | dict[int, int] = 3,
+    allow_reversed_past: bool = False,
 ) -> tuple[list[dict], str | None]:
     """
     試合リストにジャッジ（主審・副審）および司会タイマーを割り当てる。
     制約:
-      1. 赤: 同一時間枠内での同一スタッフ의重複割り当て禁止
+      1. 赤: 同一時間枠内での同一スタッフの重複割り当て禁止
       2. 黄: 利害関係校の試合へのアサイン禁止
       3. 青: 同一部門（セクション）において、過去に担当したことのある学校の試合へのアサイン禁止
     """
@@ -34,18 +35,18 @@ def assign_judges(
 
     # Sort segments by segment_order, then id
     def get_seg_sort_key(sid):
-        m_list = seg_matches[sid]
-        first_m = m_list[0] if m_list else {}
-        order = first_m.get("segment_order")
-        if order is None:
-            order = 999999
-        return (order, sid)
+      m_list = seg_matches[sid]
+      first_m = m_list[0] if m_list else {}
+      order = first_m.get("segment_order")
+      if order is None:
+          order = 999999
+      return (order, sid)
 
     sorted_seg_ids = sorted(seg_matches.keys(), key=get_seg_sort_key)
 
     def try_assignment(ignore_blue=False) -> list[dict] | None:
         judge_assignment_count = {s["id"]: 0 for s in staffs}
-        past_schools_by_staff_section: dict[tuple[int, int], set[int]] = {}
+        past_sides_by_staff_school: dict[tuple[int, int, int], set[str]] = {}
 
         assigned_matches = []
 
@@ -78,12 +79,16 @@ def assign_judges(
                 section_id = match.get("event_section_id")
                 if section_id is not None:
                     for s_id in assigned_staff_ids:
-                        if (s_id, section_id) not in past_schools_by_staff_section:
-                            past_schools_by_staff_section[(s_id, section_id)] = set()
                         if aff_school_id:
-                            past_schools_by_staff_section[(s_id, section_id)].add(aff_school_id)
+                            k = (s_id, section_id, aff_school_id)
+                            if k not in past_sides_by_staff_school:
+                                past_sides_by_staff_school[k] = set()
+                            past_sides_by_staff_school[k].add("aff")
                         if neg_school_id:
-                            past_schools_by_staff_section[(s_id, section_id)].add(neg_school_id)
+                            k = (s_id, section_id, neg_school_id)
+                            if k not in past_sides_by_staff_school:
+                                past_sides_by_staff_school[k] = set()
+                            past_sides_by_staff_school[k].add("neg")
 
             # 未確定試合をコピーして初期化
             shuffled_matches = [dict(m) for m in unconfirmed_in_seg]
@@ -122,9 +127,28 @@ def assign_judges(
                         if any(sid in involved_school_ids for sid in interested):
                             continue
                         if not ignore_blue and section_id is not None:
-                            seen = past_schools_by_staff_section.get((s["id"], section_id), set())
-                            if any(sid in involved_school_ids for sid in seen):
-                                continue
+                            if allow_reversed_past:
+                                conflict_aff = False
+                                if aff_school_id:
+                                    past_sides = past_sides_by_staff_school.get((s["id"], section_id, aff_school_id), set())
+                                    if "aff" in past_sides:
+                                        conflict_aff = True
+                                conflict_neg = False
+                                if neg_school_id:
+                                    past_sides = past_sides_by_staff_school.get((s["id"], section_id, neg_school_id), set())
+                                    if "neg" in past_sides:
+                                        conflict_neg = True
+                                if conflict_aff or conflict_neg:
+                                    continue
+                            else:
+                                conflict = False
+                                for school_id in involved_school_ids:
+                                    past_sides = past_sides_by_staff_school.get((s["id"], section_id, school_id), set())
+                                    if past_sides:
+                                        conflict = True
+                                        break
+                                if conflict:
+                                    continue
                         candidates.append(s)
                     return candidates
 
@@ -184,12 +208,16 @@ def assign_judges(
 
                 if section_id is not None:
                     for sid in assigned_ids_for_match:
-                        if (sid, section_id) not in past_schools_by_staff_section:
-                            past_schools_by_staff_section[(sid, section_id)] = set()
                         if aff_school_id:
-                            past_schools_by_staff_section[(sid, section_id)].add(aff_school_id)
+                            k = (sid, section_id, aff_school_id)
+                            if k not in past_sides_by_staff_school:
+                                past_sides_by_staff_school[k] = set()
+                            past_sides_by_staff_school[k].add("aff")
                         if neg_school_id:
-                            past_schools_by_staff_section[(sid, section_id)].add(neg_school_id)
+                            k = (sid, section_id, neg_school_id)
+                            if k not in past_sides_by_staff_school:
+                                past_sides_by_staff_school[k] = set()
+                            past_sides_by_staff_school[k].add("neg")
 
                 assigned_matches.append(match)
 

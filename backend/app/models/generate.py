@@ -61,4 +61,5 @@ class DashboardSummary(BaseModel):
 class AssignJudgesRequest(BaseModel):
     """審判割り当てリクエスト。"""
     segment_judge_counts: dict[int, int]  # key: segment_id, value: 各枠の1試合あたりのジャッジ数
+    allow_reversed_past: bool = False     # 肯否逆であれば過去に見た学校であっても割り当てを許可するか
 

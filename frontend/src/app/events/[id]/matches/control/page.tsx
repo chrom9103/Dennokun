@@ -88,6 +88,7 @@ export default function ControlPage() {
   // Filters
   const [fSegment, setFSegment] = useState("all");
   const [fSection, setFSection] = useState("all");
+  const [allowReversedPast, setAllowReversedPast] = useState(false);
 
   // Scroll Restorer to prevent page jumping during silent updates
   const mainScrollRef = useRef<number>(0);
@@ -265,7 +266,7 @@ export default function ControlPage() {
     setJudgeResult(null);
     setError(null);
     try {
-      const result = await assignJudges(eventId, segmentJudgeCounts);
+      const result = await assignJudges(eventId, segmentJudgeCounts, allowReversedPast);
       setJudgeResult(result);
       await load();
     } catch (e) {
@@ -521,13 +522,7 @@ export default function ControlPage() {
     }
   }
 
-  const getSortedCandidates = (match: MatchListItem, role: 'main' | 'sub1' | 'sub2' | 'timekeeper', segmentStaffAssignments: Record<number, number>, seg: any) => {
-    const candidates = staffs.filter((s) => {
-      if (role === 'timekeeper') return s.can_be_timekeeper;
-      if (role === 'main') return s.can_be_main_judge;
-      return s.can_be_sub_judge;
-    });
-
+  const checkPastSchoolConflict = useCallback((staffId: number, match: MatchListItem) => {
     const affTeam = teams.find((t) => t.id === match.aff_team_id);
     const negTeam = teams.find((t) => t.id === match.neg_team_id);
     const affSchoolId = affTeam?.event_school_id;
@@ -540,9 +535,54 @@ export default function ControlPage() {
       return a.id - b.id;
     });
     const currentSegIdx = sortedSegments.findIndex((s) => s.id === match.event_timetable_segment_id);
+    if (currentSegIdx <= 0) return false;
+
     const pastSegments = sortedSegments.slice(0, currentSegIdx);
     const pastSegmentIds = new Set(pastSegments.map((s) => s.id));
     const pastMatches = matches.filter((pastM) => pastM.event_timetable_segment_id !== null && pastSegmentIds.has(pastM.event_timetable_segment_id));
+
+    const seenSchoolsAsAff = new Set<number>();
+    const seenSchoolsAsNeg = new Set<number>();
+
+    pastMatches.forEach((pastM) => {
+      const isAssigned = (
+        pastM.main_judge_staff_id === staffId ||
+        pastM.sub_judge1_staff_id === staffId ||
+        pastM.sub_judge2_staff_id === staffId ||
+        pastM.timekeeper_staff_id === staffId
+      );
+      if (isAssigned && pastM.event_section_id === match.event_section_id) {
+        const pastAffTeam = teams.find((t) => t.id === pastM.aff_team_id);
+        const pastNegTeam = teams.find((t) => t.id === pastM.neg_team_id);
+        if (pastAffTeam?.event_school_id) seenSchoolsAsAff.add(pastAffTeam.event_school_id);
+        if (pastNegTeam?.event_school_id) seenSchoolsAsNeg.add(pastNegTeam.event_school_id);
+      }
+    });
+
+    if (allowReversedPast) {
+      const hasAffConflict = affSchoolId && seenSchoolsAsAff.has(affSchoolId);
+      const hasNegConflict = negSchoolId && seenSchoolsAsNeg.has(negSchoolId);
+      return !!(hasAffConflict || hasNegConflict);
+    } else {
+      const allSeenSchools = new Set([...seenSchoolsAsAff, ...seenSchoolsAsNeg]);
+      return !!(
+        (affSchoolId && allSeenSchools.has(affSchoolId)) ||
+        (negSchoolId && allSeenSchools.has(negSchoolId))
+      );
+    }
+  }, [teams, segments, matches, allowReversedPast]);
+
+  const getSortedCandidates = (match: MatchListItem, role: 'main' | 'sub1' | 'sub2' | 'timekeeper', segmentStaffAssignments: Record<number, number>, seg: any) => {
+    const candidates = staffs.filter((s) => {
+      if (role === 'timekeeper') return s.can_be_timekeeper;
+      if (role === 'main') return s.can_be_main_judge;
+      return s.can_be_sub_judge;
+    });
+
+    const affTeam = teams.find((t) => t.id === match.aff_team_id);
+    const negTeam = teams.find((t) => t.id === match.neg_team_id);
+    const affSchoolId = affTeam?.event_school_id;
+    const negSchoolId = negTeam?.event_school_id;
 
     const mapped = candidates.map((staff) => {
       const isDuplicate = matches.some((m) => {
@@ -567,26 +607,7 @@ export default function ControlPage() {
         (negSchoolId && staff.interested_school_ids?.includes(negSchoolId))
       );
 
-      const seenSchoolsInPast = new Set<number>();
-      pastMatches.forEach((pastM) => {
-        const isAssigned = (
-          pastM.main_judge_staff_id === staff.id ||
-          pastM.sub_judge1_staff_id === staff.id ||
-          pastM.sub_judge2_staff_id === staff.id ||
-          pastM.timekeeper_staff_id === staff.id
-        );
-        if (isAssigned && pastM.event_section_id === match.event_section_id) {
-          const pastAffTeam = teams.find((t) => t.id === pastM.aff_team_id);
-          const pastNegTeam = teams.find((t) => t.id === pastM.neg_team_id);
-          if (pastAffTeam?.event_school_id) seenSchoolsInPast.add(pastAffTeam.event_school_id);
-          if (pastNegTeam?.event_school_id) seenSchoolsInPast.add(pastNegTeam.event_school_id);
-        }
-      });
-
-      const hasSeenSameSchoolInPast = !!(
-        (affSchoolId && seenSchoolsInPast.has(affSchoolId)) ||
-        (negSchoolId && seenSchoolsInPast.has(negSchoolId))
-      );
+      const hasSeenSameSchoolInPast = checkPastSchoolConflict(staff.id, match);
 
       return {
         staff,
@@ -645,38 +666,7 @@ export default function ControlPage() {
         (negSchoolId && staff.interested_school_ids?.includes(negSchoolId))
       );
 
-      const sortedSegments = [...segments].sort((a, b) => {
-        if (a.order_number !== b.order_number) {
-          return (a.order_number ?? 0) - (b.order_number ?? 0);
-        }
-        return a.id - b.id;
-      });
-
-      const currentSegIdx = sortedSegments.findIndex((s) => s.id === match.event_timetable_segment_id);
-      const pastSegments = sortedSegments.slice(0, currentSegIdx);
-      const pastSegmentIds = new Set(pastSegments.map((s) => s.id));
-      const pastMatches = matches.filter((pastM) => pastM.event_timetable_segment_id !== null && pastSegmentIds.has(pastM.event_timetable_segment_id));
-
-      const seenSchoolsInPast = new Set<number>();
-      pastMatches.forEach((pastM) => {
-        const isAssigned = (
-          pastM.main_judge_staff_id === staff.id ||
-          pastM.sub_judge1_staff_id === staff.id ||
-          pastM.sub_judge2_staff_id === staff.id ||
-          pastM.timekeeper_staff_id === staff.id
-        );
-        if (isAssigned && pastM.event_section_id === match.event_section_id) {
-          const pastAffTeam = teams.find((t) => t.id === pastM.aff_team_id);
-          const pastNegTeam = teams.find((t) => t.id === pastM.neg_team_id);
-          if (pastAffTeam?.event_school_id) seenSchoolsInPast.add(pastAffTeam.event_school_id);
-          if (pastNegTeam?.event_school_id) seenSchoolsInPast.add(pastNegTeam.event_school_id);
-        }
-      });
-
-      hasSeenSameSchoolInPast = !!(
-        (affSchoolId && seenSchoolsInPast.has(affSchoolId)) ||
-        (negSchoolId && seenSchoolsInPast.has(negSchoolId))
-      );
+      hasSeenSameSchoolInPast = checkPastSchoolConflict(staff.id, match);
 
       chipClass = "bg-secondary/20 border-border/80 text-foreground font-medium";
       if (isDuplicate) {
@@ -975,6 +965,22 @@ export default function ControlPage() {
             </Table>
             {/* Card Footer with actions */}
             <div className="border-t border-border p-4 bg-secondary/5 space-y-4">
+              <div className="flex items-center gap-2 p-2.5 rounded-lg bg-white border border-border/85 shadow-xs">
+                <input
+                  id="allow-reversed-past-checkbox"
+                  type="checkbox"
+                  checked={allowReversedPast}
+                  onChange={(e) => setAllowReversedPast(e.target.checked)}
+                  className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20 cursor-pointer"
+                />
+                <label
+                  htmlFor="allow-reversed-past-checkbox"
+                  className="text-xs font-semibold text-foreground cursor-pointer select-none"
+                >
+                  肯否逆であれば過去に見た学校であっても割り当てを許可する
+                </label>
+              </div>
+
               {/* Action Buttons Row */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>

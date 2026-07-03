@@ -98,11 +98,15 @@ export async function fetchDashboardSummary(eventId: number): Promise<DashboardS
 
 export async function assignJudges(
   eventId: number,
-  segmentJudgeCounts: Record<number, number>
+  segmentJudgeCounts: Record<number, number>,
+  allowReversedPast: boolean = false
 ): Promise<{ status: string; updated_count: number; warning?: string }> {
   return apiFetch(`/api/events/${eventId}/assign-judges`, {
     method: "POST",
-    body: JSON.stringify({ segment_judge_counts: segmentJudgeCounts }),
+    body: JSON.stringify({ 
+      segment_judge_counts: segmentJudgeCounts,
+      allow_reversed_past: allowReversedPast
+    }),
   });
 }
 

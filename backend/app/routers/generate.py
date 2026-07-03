@@ -199,6 +199,7 @@ async def assign_judges_endpoint(event_id: int, req: AssignJudgesRequest):
             staffs=judge_staffs,
             teams=teams,
             judges_per_match=req.segment_judge_counts,
+            allow_reversed_past=req.allow_reversed_past,
         )
 
         # 更新を保存
