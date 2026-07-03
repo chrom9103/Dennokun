@@ -565,7 +565,7 @@ export default function ControlPage() {
                           const subJudge2 = staffs.find((s) => s.id === m.sub_judge2_staff_id);
                           const timekeeper = staffs.find((s) => s.id === m.timekeeper_staff_id);
 
-                          const renderStaffName = (staff: Staff | undefined) => {
+                          const renderStaffName = (staff: Staff | undefined, roleLabel?: string) => {
                              if (!staff) return null;
                              const isDuplicate = (segmentStaffAssignments[staff.id] || 0) > 1;
 
@@ -614,49 +614,41 @@ export default function ControlPage() {
                                (negSchoolId && seenSchoolsInPast.has(negSchoolId))
                              );
 
+                             let chipClass = "bg-secondary/20 border-border/80 text-foreground font-medium";
                              if (isDuplicate) {
-                               return (
-                                 <span className="text-red-600 font-semibold">
-                                   {staff.name}
-                                 </span>
-                               );
+                               chipClass = "bg-red-50 border-red-200 text-red-600 font-semibold";
+                             } else if (isSchoolConflict) {
+                               chipClass = "bg-amber-50 border-amber-200 text-amber-600 font-semibold";
+                             } else if (hasSeenSameSchoolInPast) {
+                               chipClass = "bg-blue-50 border-blue-200 text-blue-600 font-semibold";
                              }
-                             if (isSchoolConflict) {
-                               return (
-                                 <span className="text-amber-600 font-semibold">
-                                   {staff.name}
-                                 </span>
-                               );
-                             }
-                             if (hasSeenSameSchoolInPast) {
-                               return (
-                                 <span className="text-blue-600 font-semibold">
-                                   {staff.name}
-                                 </span>
-                               );
-                             }
-                             return <span>{staff.name}</span>;
+
+                             return (
+                               <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs shadow-xs transition-all ${chipClass}`}>
+                                 {roleLabel && (
+                                   <span className="text-[10px] font-bold text-muted-foreground/60 mr-0.5 bg-black/5 dark:bg-white/10 px-1 py-0.5 rounded">
+                                     {roleLabel}
+                                   </span>
+                                 )}
+                                 <span className="inline-block w-[76px] truncate align-bottom" title={staff.name}>{staff.name}</span>
+                               </span>
+                             );
                            };
 
-                          const renderJudges = () => {
-                            const elements: React.ReactNode[] = [];
-                            if (mainJudge) elements.push(renderStaffName(mainJudge));
-                            if (subJudge1) elements.push(renderStaffName(subJudge1));
-                            if (subJudge2) elements.push(renderStaffName(subJudge2));
-                            if (elements.length === 0) return "-";
-                            return (
-                              <>
-                                {elements.map((el, i) => (
-                                  <span key={i}>
-                                    {i > 0 && " / "}
-                                    {el}
-                                  </span>
-                                ))}
-                              </>
-                            );
-                          };
+                           const renderJudges = () => {
+                             const elements: React.ReactNode[] = [];
+                             if (mainJudge) elements.push(renderStaffName(mainJudge, "主"));
+                             if (subJudge1) elements.push(renderStaffName(subJudge1, "副"));
+                             if (subJudge2) elements.push(renderStaffName(subJudge2, "副"));
+                             if (elements.length === 0) return <span className="text-muted-foreground text-xs">-</span>;
+                             return (
+                               <div className="flex flex-wrap gap-1.5">
+                                 {elements}
+                               </div>
+                             );
+                           };
 
-                          return (
+                           return (
                             <TableRow key={m.id}>
                               <TableCell className="text-sm font-medium pl-4">{m.room_name ?? <span className="italic text-xs text-muted-foreground">未割当</span>}</TableCell>
                               <TableCell>
@@ -668,7 +660,7 @@ export default function ControlPage() {
                               <TableCell align="center" className="text-center font-bold text-xs text-muted-foreground/60 w-12">VS</TableCell>
                               <TableCell className="font-semibold text-sm">{m.neg_team_name ?? <span className="text-muted-foreground text-xs">-</span>}</TableCell>
                               <TableCell className="text-xs text-muted-foreground font-medium">{renderJudges()}</TableCell>
-                              <TableCell className="text-xs text-muted-foreground font-medium">{renderStaffName(timekeeper) || "-"}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground font-medium">{renderStaffName(timekeeper, "計") || "-"}</TableCell>
                               <TableCell align="center" className="text-center w-20">
                                 {m.is_result_confirmed
                                   ? <Badge variant="success" className="text-[10px] font-semibold">確定</Badge>
