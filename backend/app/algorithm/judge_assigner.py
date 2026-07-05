@@ -16,6 +16,7 @@ def assign_judges(
     """
     試合リストにジャッジ（主審・副審）および司会タイマーを割り当てる。
     制約:
+      0. 橙: 出席可能時間枠以外へのアサイン禁止（present_segment_ids が空の場合は全枠出席可能）
       1. 赤: 同一時間枠内での同一スタッフの重複割り当て禁止
       2. 黄: 利害関係校の試合へのアサイン禁止
       3. 青: 同一部門（セクション）において、過去に担当したことのある学校の試合へのアサイン禁止
@@ -24,6 +25,15 @@ def assign_judges(
     team_school_map: dict[int, int | None] = {
         t["id"]: t.get("event_school_id") for t in teams
     }
+
+    # スタッフIDごとの出席可能セグメントIDセット（空=全枠出席可能）
+    staff_present_segs: dict[int, set[int]] = {}
+    for s in staffs:
+        present = s.get("present_segment_ids")
+        if present:
+            staff_present_segs[s["id"]] = set(present)
+        else:
+            staff_present_segs[s["id"]] = set()  # 空=全枠出席可能
 
     # Group matches by segment
     seg_matches = {}
@@ -123,9 +133,19 @@ def assign_judges(
                             continue
                         if s["id"] in segment_used:
                             continue
+
+                        # 制約0 (橙): 出席可能時間枠チェック
+                        # present_segs が空の場合は全時間枠出席可能とみなす
+                        present_segs = staff_present_segs.get(s["id"], set())
+                        if present_segs and seg_id not in present_segs:
+                            continue
+
+                        # 制約2 (黄): 利害関係校チェック
                         interested = s.get("interested_school_ids") or []
                         if any(sid in involved_school_ids for sid in interested):
                             continue
+
+                        # 制約3 (青): 過去担当校チェック
                         if not ignore_blue and section_id is not None:
                             if allow_reversed_past:
                                 conflict_aff = False
@@ -223,7 +243,7 @@ def assign_judges(
 
         return assigned_matches
 
-    # Try assignment with strict constraints first (Red, Yellow, Blue)
+    # Try assignment with strict constraints first (Red, Yellow, Blue, Orange)
     max_strict_attempts = 1500
     for _ in range(max_strict_attempts):
         res = try_assignment(ignore_blue=False)
