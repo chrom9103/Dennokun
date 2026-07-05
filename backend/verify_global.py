@@ -1,62 +1,46 @@
 """
-judge_assigner.py — ジャッジ割当ロジック
-==========================================
-
-アルゴリズム概要:
-  静的順序高速CSP（制約充足問題）+ 段階的制約緩和 (Gradual Relaxation)
-
-  1. 探索はセグメント（時間枠）および役割の順序で固定された変数リストに対して行う。
-     これにより、バックトラック時の時系列の整合性と枝刈り効率を最大化する。
-  2. 橙制約（出席可能枠）、赤制約（重複不可）、黄制約（利害関係）は「必須制約」として常に守る。
-  3. 青制約（過去担当校）は「ソフト制約」として扱い、段階的に許容する違反数を 0 から増やしていく。
-     これにより、数学的に青制約を100%守ることが不可能な状況であっても、
-     「青制約違反（重複担当）が最小となる組み合わせ」を確定的に探索して出力する。
-  4. 探索状態はインクリメンタルなセット/辞書で管理され、定数時間で制約判定が行われるため高速に動作する。
+動的ノード数制限による超高速段階的緩和CSP検証スクリプト
 """
-
-from __future__ import annotations
+import asyncio
+import sys
 import time
 
-def assign_judges(
+sys.path.insert(0, "/app")
+
+def assign_judges_csp_min_violations_fast(
     matches: list[dict],
     staffs: list[dict],
     teams: list[dict],
     judges_per_match: int | dict[int, int] = 3,
     allow_reversed_past: bool = False,
-) -> tuple[list[dict], str | None]:
-    """
-    試合リストにジャッジ（主審・副審）および司会タイマーを割り当てる。
-    
-    Returns:
-        (assigned_matches, warning_message_or_None)
-    """
-    # チームID → 学校IDのマップ
+) -> tuple[list[dict], int, float]:
+    # チームID → 学校ID
     team_school_map: dict[int, int | None] = {
         t["id"]: t.get("event_school_id") for t in teams
     }
 
-    # スタッフID → スタッフ辞書のマップ
+    # スタッフマップ
     staffs_map = {s["id"]: s for s in staffs}
 
-    # スタッフ出席セグメントIDセット (空の場合は全セグメント出席可能)
+    # スタッフ出席セグメント
     staff_present_segs: dict[int, set[int]] = {}
     for s in staffs:
         present = s.get("present_segment_ids")
         staff_present_segs[s["id"]] = set(present) if present else set()
 
-    # スタッフ利害関係校IDセット
+    # スタッフ利害関係校
     staff_interested: dict[int, set[int]] = {
         s["id"]: set(s.get("interested_school_ids") or []) for s in staffs
     }
 
-    # 各試合の役割数を取得するヘルパー
+    # 各試合の役割数を取得
     def get_j_count(m: dict) -> int:
         seg_id = m.get("event_timetable_segment_id")
         if isinstance(judges_per_match, dict):
             return judges_per_match.get(seg_id, 3)
         return judges_per_match
 
-    # 各試合の役割変数を取得するヘルパー
+    # 各試合に必要な役割のリストを定義
     def get_roles_for_match(m: dict) -> list[tuple[str, str]]:
         j = get_j_count(m)
         roles = []
@@ -68,8 +52,11 @@ def assign_judges(
         roles.append(("timekeeper_staff_id", "can_be_timekeeper"))
         return roles
 
-    # 1. セグメントの順序に従って試合をソートする（変数順序の最適化）
-    seg_matches: dict[int, list[dict]] = {}
+    # 試合のコピーと分類（セグメント順にソート）
+    work_matches = []
+    variables = [] # (match_index, role_field, role_flag)
+
+    seg_matches = {}
     for m in matches:
         seg_id = m.get("event_timetable_segment_id")
         seg_matches.setdefault(seg_id, []).append(m)
@@ -84,10 +71,6 @@ def assign_judges(
     sorted_matches_temp = []
     for seg_id in sorted_seg_ids:
         sorted_matches_temp.extend(seg_matches[seg_id])
-
-    # 2. 変数とコピーの作成
-    work_matches = []
-    variables = [] # (match_index, role_field, role_flag)
 
     for idx, orig_m in enumerate(sorted_matches_temp):
         m = dict(orig_m)
@@ -108,9 +91,8 @@ def assign_judges(
     # --- アサイン状態テーブルの初期化 ---
     count_map = {s["id"]: 0 for s in staffs}
     assigned_segs = {s["id"]: set() for s in staffs}
-    assigned_schools = {s["id"]: {} for s in staffs} # staff_id -> {section_id: set}
+    assigned_schools = {s["id"]: {} for s in staffs}
 
-    # 確定済みの試合をアサイン状態テーブルに事前反映
     for idx, m in enumerate(work_matches):
         if m.get("is_staffs_fixed"):
             seg_id = m.get("event_timetable_segment_id")
@@ -135,25 +117,25 @@ def assign_judges(
                             else:
                                 assigned_schools[sid].setdefault(section_id, set()).add(neg_school_id)
 
-    # 3. 制約判定および違反計算
+    # 高速アサインチェック
     def check_assignable_with_violation(staff_id: int, match_idx: int, role_flag: str) -> tuple[bool, int]:
-        staff = staffs_map.get(staff_id)
-        if not staff or not staff.get(role_flag):
+        staff = staffs_map[staff_id]
+        if not staff.get(role_flag):
             return False, 0
 
         match = work_matches[match_idx]
         seg_id = match.get("event_timetable_segment_id")
 
-        # [橙制約] 出席可能時間枠チェック
+        # 1. 橙制約: 出席可能時間枠
         present = staff_present_segs.get(staff_id, set())
         if present and seg_id not in present:
             return False, 0
 
-        # [赤制約] 同一時間枠での重複不可
+        # 2. 赤制約: 同一時間枠での重複不可
         if seg_id in assigned_segs[staff_id]:
             return False, 0
 
-        # [黄制約] 利害関係校チェック
+        # 3. 黄制約: 利害関係校
         aff_team_id = match.get("aff_team_id")
         neg_team_id = match.get("neg_team_id")
         aff_school_id = team_school_map.get(aff_team_id) if aff_team_id else None
@@ -163,7 +145,7 @@ def assign_judges(
         if staff_interested.get(staff_id, set()) & involved_schools:
             return False, 0
 
-        # [青制約] 過去担当校の重複（違反）カウント
+        # 4. 青制約違反の計算
         violation_count = 0
         if involved_schools:
             section_id = match.get("event_section_id")
@@ -181,7 +163,6 @@ def assign_judges(
                             
         return True, violation_count
 
-    # 4. アサインおよびアンアサイン処理
     def assign(staff_id: int, match_idx: int, field: str):
         match = work_matches[match_idx]
         seg_id = match.get("event_timetable_segment_id")
@@ -228,7 +209,6 @@ def assign_judges(
                 else:
                     assigned_schools[staff_id].setdefault(section_id, set()).discard(neg_school_id)
 
-    # 5. 候補取得
     def get_candidates(match_idx: int, role_flag: str) -> list[tuple[int, int]]:
         candidates = []
         for s in staffs:
@@ -238,7 +218,6 @@ def assign_judges(
         candidates.sort(key=lambda item: count_map[item[0]])
         return candidates
 
-    # 6. 探索の実行
     def run_search(max_violations: int, node_limit: int) -> bool:
         nodes_visited = [0]
         current_violations = [0]
@@ -274,18 +253,17 @@ def assign_judges(
 
         return backtrack(0)
 
-    # 7. 段階的緩和 (違反しきい値を 0 から増やしながら高速探索)
-    # 探索の第一パスはノード上限を 10,000 とする（これによって解がない初期ステップが瞬時に終わる）
-    # それでも解が見つからない場合は、探索限界を 100,000 に広げて最終的な緩和探索を行う
+    # 高速に段階的探索を行う
+    # 最初の探索パスはノード制限を 5,000 と非常に小さくする
+    # 見つからなかった場合のフォールバックとして制限を 100,000 にして再試行する
+    start_time = time.time()
     for node_lim in [10000, 100000]:
         for max_v in range(0, 100):
             success = run_search(max_v, node_lim)
             if success:
-                # 成功した場合は元の matches リストの順序で返す
+                elapsed = time.time() - start_time
                 match_dict = {m["id"]: m for m in work_matches}
                 ordered = [match_dict.get(orig["id"], orig) for orig in matches]
-                
-                # アサイン人数の設定
                 for m in ordered:
                     if not m.get("is_staffs_fixed"):
                         c = 0
@@ -293,17 +271,34 @@ def assign_judges(
                             if m.get(r):
                                 c += 1
                         m["judges_assignment_count"] = c
-                
-                # 警告メッセージの設定
-                if max_v == 0:
-                    warning_msg = None
-                else:
-                    warning_msg = (
-                        "制約（赤・黄・青）をすべて満たす割り当てが見つかりませんでした。"
-                        f"過去担当校の重複が最小限（合計 {max_v} 回）になるよう最適化した割り当てを表示しています。"
-                    )
-                return ordered, warning_msg
+                return ordered, max_v, elapsed
 
-    # 最終的なフォールバック（解がどうしても見つからない場合）
-    warning_msg = "スタッフ数または担当可能時間の不足により、制約を満たす審判アサインメントを生成できませんでした。"
-    return matches, warning_msg
+    return matches, -1, time.time() - start_time
+
+
+async def main():
+    from app.core.handle_db.matches import get_all_matches
+    from app.core.handle_db.teams import get_all_teams
+    from app.core.handle_db.staffs import get_all_staffs
+
+    EVENT_ID = 63449476
+
+    matches = await get_all_matches(EVENT_ID)
+    teams = await get_all_teams(EVENT_ID)
+    staffs = await get_all_staffs(EVENT_ID)
+    judge_staffs = [s for s in staffs if s.get("can_be_main_judge") or s.get("can_be_sub_judge") or s.get("can_be_timekeeper")]
+
+    seg_ids = list({m.get("event_timetable_segment_id") for m in matches if m.get("event_timetable_segment_id")})
+    segment_judge_counts = {seg_id: 2 for seg_id in seg_ids}
+
+    print("--- 動的制限 段階的緩和 CSP ---")
+    assigned, min_violations, elapsed = assign_judges_csp_min_violations_fast(
+        matches=matches, staffs=judge_staffs, teams=teams,
+        judges_per_match=segment_judge_counts, allow_reversed_past=False
+    )
+    print(f"結果:")
+    print(f"  最小青制約違反数: {min_violations} 件")
+    print(f"  所要時間: {elapsed:.4f} 秒")
+
+if __name__ == "__main__":
+    asyncio.run(main())
