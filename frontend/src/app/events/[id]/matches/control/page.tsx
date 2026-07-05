@@ -614,16 +614,25 @@ export default function ControlPage() {
 
       const hasSeenSameSchoolInPast = checkPastSchoolConflict(staff.id, match);
 
+      const isTimeUnavailable = !!(
+        staff.present_segment_ids &&
+        staff.present_segment_ids.length > 0 &&
+        match.event_timetable_segment_id != null &&
+        !staff.present_segment_ids.includes(match.event_timetable_segment_id)
+      );
+
       return {
         staff,
         isDuplicate,
         isPast: hasSeenSameSchoolInPast,
-        isRelation: isSchoolConflict
+        isRelation: isSchoolConflict,
+        isTimeUnavailable
       };
     });
 
-    const getSortScore = (cand: { isDuplicate: boolean; isPast: boolean; isRelation: boolean }) => {
-      const { isDuplicate: d, isPast: p, isRelation: r } = cand;
+    const getSortScore = (cand: { isDuplicate: boolean; isPast: boolean; isRelation: boolean; isTimeUnavailable: boolean }) => {
+      const { isDuplicate: d, isPast: p, isRelation: r, isTimeUnavailable: tu } = cand;
+      if (tu) return 10;
       if (!d && !p && !r) return 1;
       if (d && !p && !r) return 2;
       if (p && !d && !r) return 3;
@@ -673,8 +682,17 @@ export default function ControlPage() {
 
       hasSeenSameSchoolInPast = checkPastSchoolConflict(staff.id, match);
 
+      const isTimeUnavailable = !!(
+        staff.present_segment_ids &&
+        staff.present_segment_ids.length > 0 &&
+        match.event_timetable_segment_id != null &&
+        !staff.present_segment_ids.includes(match.event_timetable_segment_id)
+      );
+
       chipClass = "bg-secondary/20 border-border/80 text-foreground font-medium";
-      if (isDuplicate) {
+      if (isTimeUnavailable) {
+        chipClass = "bg-gray-100 border-gray-300 text-gray-400 dark:bg-gray-800/40 dark:border-gray-700 dark:text-gray-500 font-normal";
+      } else if (isDuplicate) {
         chipClass = "bg-red-50 border-red-200 text-red-600 font-semibold";
       } else if (isSchoolConflict) {
         chipClass = "bg-amber-50 border-amber-200 text-amber-600 font-semibold";
@@ -740,7 +758,8 @@ export default function ControlPage() {
               </button>
 
               {getSortedCandidates(match, role, segmentStaffAssignments, seg).map((cand) => {
-                const candColorClass = cand.isDuplicate ? "bg-red-50 text-red-700 hover:bg-red-100" :
+                const candColorClass = cand.isTimeUnavailable ? "bg-gray-50 text-gray-400 hover:bg-gray-100/80 dark:bg-gray-900/20" :
+                                       cand.isDuplicate ? "bg-red-50 text-red-700 hover:bg-red-100" :
                                        cand.isRelation ? "bg-amber-50 text-amber-700 hover:bg-amber-100" :
                                        cand.isPast ? "bg-blue-50 text-blue-700 hover:bg-blue-100" :
                                        "hover:bg-secondary/40 text-foreground";
@@ -757,6 +776,11 @@ export default function ControlPage() {
                   >
                     <span className="font-semibold truncate mr-2">{cand.staff.name}</span>
                     <div className="flex items-center gap-1 shrink-0">
+                      {cand.isTimeUnavailable && (
+                        <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-white/60 border border-gray-300 text-gray-400 shrink-0">
+                          時間外
+                        </span>
+                      )}
                       {cand.isDuplicate && (
                         <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-white/60 border border-red-300 text-red-700 shrink-0">
                           重複
