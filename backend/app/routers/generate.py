@@ -97,7 +97,7 @@ async def generate_matches(event_id: int, req: GenerateMatchesRequest):
             teams=teams,
             segments=segments,
             rooms=rooms,
-            parallel_matches_map=req.segment_parallel_matches,
+            section_segment_parallel_matches=req.section_segment_parallel_matches,
             confirmed_matches=confirmed_matches,
         )
 

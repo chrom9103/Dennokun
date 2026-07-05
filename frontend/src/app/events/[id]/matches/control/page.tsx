@@ -60,8 +60,8 @@ export default function ControlPage() {
   const [generating, setGenerating] = useState(false);
   const [genResult, setGenResult] = useState<{ generated_count: number; warnings: string[] } | null>(null);
 
-  // Parallel matches per segment
-  const [parallelMatches, setParallelMatches] = useState<Record<number, number>>({});
+  // Parallel matches per segment and section
+  const [parallelMatches, setParallelMatches] = useState<Record<string, number>>({});
   // Judge counts per segment
   const [segmentJudgeCounts, setSegmentJudgeCounts] = useState<Record<number, number>>({});
   // Form options (overwrite, judges_per_match)
@@ -141,18 +141,23 @@ export default function ControlPage() {
         setSegments(segsData);
         setStaffs(staffsData);
 
-        // Initialize parallel matches per segment if not set
+        // Initialize parallel matches per segment and section if not set
         setParallelMatches((prev) => {
           const next = { ...prev };
-          segsData.forEach((s) => {
-            if (next[s.id] === undefined) {
-              const segMatches = matchesData.filter(m => m.event_timetable_segment_id === s.id);
-              if (segMatches.length > 0) {
-                next[s.id] = segMatches.length;
-              } else {
-                next[s.id] = Math.min(2, roomsData.length || 2);
+          sectionsData.forEach((sec) => {
+            segsData.forEach((seg) => {
+              const key = `${sec.id}_${seg.id}`;
+              if (next[key] === undefined) {
+                const matchCount = matchesData.filter(
+                  (m) => m.event_timetable_segment_id === seg.id && m.event_section_id === sec.id
+                ).length;
+                if (matchCount > 0) {
+                  next[key] = matchCount;
+                } else {
+                  next[key] = 1;
+                }
               }
-            }
+            });
           });
           return next;
         });
@@ -242,7 +247,7 @@ export default function ControlPage() {
     setError(null);
     try {
       const req: GenerateMatchesRequest = {
-        segment_parallel_matches: parallelMatches,
+        section_segment_parallel_matches: parallelMatches,
         overwrite: false,
       };
       const result = await generateMatches(eventId, req);
@@ -886,7 +891,7 @@ export default function ControlPage() {
               <TableHeader>
                 <TableRow hover={false}>
                   <TableHead>時間枠</TableHead>
-                  <TableHead align="center" className="w-1/3 text-center">各枠の並行試合数設定</TableHead>
+                  <TableHead align="center" className="w-1/3 text-center">部門別の各枠並行試合数設定</TableHead>
                   <TableHead align="center" className="w-1/3 text-center">各枠の1試合あたりジャッジ数設定</TableHead>
                 </TableRow>
               </TableHeader>
@@ -898,34 +903,45 @@ export default function ControlPage() {
                       {seg.start_time && <p className="text-xs text-muted-foreground font-normal">{seg.start_time}開始</p>}
                     </TableCell>
                     
-                    {/* Parallel Matches Column */}
+                    {/* Parallel Matches Column (Per Section) */}
                     <TableCell align="center" className="py-3">
-                      <div className="inline-flex items-center gap-1 bg-white border border-border rounded-lg p-0.5 shadow-sm">
-                        <button
-                          type="button"
-                          onClick={() => setParallelMatches((prev) => ({ ...prev, [seg.id]: Math.max(0, (prev[seg.id] || 0) - 1) }))}
-                          className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          min={0}
-                          max={rooms.length || 10}
-                          value={parallelMatches[seg.id] ?? 0}
-                          onChange={(e) => {
-                            const val = Math.max(0, parseInt(e.target.value) || 0);
-                            setParallelMatches((prev) => ({ ...prev, [seg.id]: val }));
-                          }}
-                          className="w-8 text-center text-sm font-semibold focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setParallelMatches((prev) => ({ ...prev, [seg.id]: Math.min(rooms.length || 10, (prev[seg.id] || 0) + 1) }))}
-                          className="w-7 h-7 rounded-md bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-xs"
-                        >
-                          +
-                        </button>
+                      <div className="flex flex-col gap-2 items-center justify-center">
+                        {sections.map((sec) => {
+                          const key = `${sec.id}_${seg.id}`;
+                          const val = parallelMatches[key] ?? 0;
+                          return (
+                            <div key={sec.id} className="flex items-center gap-2 text-xs">
+                              <span className="font-semibold text-muted-foreground w-24 text-right truncate">{sec.name}:</span>
+                              <div className="inline-flex items-center gap-1 bg-white border border-border rounded-lg p-0.5 shadow-sm">
+                                <button
+                                  type="button"
+                                  onClick={() => setParallelMatches((prev) => ({ ...prev, [key]: Math.max(0, val - 1) }))}
+                                  className="w-6 h-6 rounded bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-[10px]"
+                                >
+                                  -
+                                </button>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={rooms.length || 10}
+                                  value={val}
+                                  onChange={(e) => {
+                                    const v = Math.max(0, parseInt(e.target.value) || 0);
+                                    setParallelMatches((prev) => ({ ...prev, [key]: v }));
+                                  }}
+                                  className="w-8 text-center text-xs font-semibold focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setParallelMatches((prev) => ({ ...prev, [key]: Math.min(rooms.length || 10, val + 1) }))}
+                                  className="w-6 h-6 rounded bg-secondary hover:bg-muted active:scale-90 flex items-center justify-center font-bold text-[10px]"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </TableCell>
                     

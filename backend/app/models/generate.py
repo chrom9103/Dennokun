@@ -7,7 +7,8 @@ from pydantic import BaseModel
 
 class GenerateMatchesRequest(BaseModel):
     """試合生成リクエスト。"""
-    segment_parallel_matches: dict[int, int]  # key: segment_id, value: 並行試合数
+    # key: "{section_id}_{segment_id}", value: 並行試合数
+    section_segment_parallel_matches: dict[str, int]
     overwrite: bool = False                    # 既存試合を削除してから生成するか
 
 
