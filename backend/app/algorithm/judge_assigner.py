@@ -11,7 +11,10 @@ judge_assigner.py — ジャッジ割当ロジック
   3. 青制約（過去担当校）は「ソフト制約」として扱い、段階的に許容する違反数を 0 から増やしていく。
      これにより、数学的に青制約を100%守ることが不可能な状況であっても、
      「青制約違反（重複担当）が最小となる組み合わせ」を確定的に探索して出力する。
-  4. 探索状態はインクリメンタルなセット/辞書で管理され、定数時間で制約判定が行われるため高速に動作する。
+  4. 探索状態はインクリメンタルなマルチセットカウンタ（辞書）で管理され、
+     バックトラック中のアサイン・アンアサイン状態を正確に追跡する。
+  5. allow_same_group_diff_team フラグが有効な場合、青制約（過去担当校）の重複判定を
+     学校（グループ）単位ではなく、チーム単位でチェックする。
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ def assign_judges(
     teams: list[dict],
     judges_per_match: int | dict[int, int] = 3,
     allow_reversed_past: bool = False,
+    allow_same_group_diff_team: bool = False,
 ) -> tuple[list[dict], str | None]:
     """
     試合リストにジャッジ（主審・副審）および司会タイマーを割り当てる。
@@ -105,18 +109,21 @@ def assign_judges(
             for field, flag in roles:
                 variables.append((idx, field, flag))
 
-    # --- アサイン状態テーブルの初期化 ---
+    # --- アサイン状態テーブルの初期化 (マルチセットカウンタとして動作) ---
     count_map = {s["id"]: 0 for s in staffs}
     assigned_segs = {s["id"]: set() for s in staffs}
-    assigned_schools = {s["id"]: {} for s in staffs} # staff_id -> {section_id: set}
+    assigned_schools = {s["id"]: {} for s in staffs}
+    assigned_teams = {s["id"]: {} for s in staffs}
 
     # 確定済みの試合をアサイン状態テーブルに事前反映
     for idx, m in enumerate(work_matches):
         if m.get("is_staffs_fixed"):
             seg_id = m.get("event_timetable_segment_id")
             section_id = m.get("event_section_id")
-            aff_school_id = team_school_map.get(m.get("aff_team_id")) if m.get("aff_team_id") else None
-            neg_school_id = team_school_map.get(m.get("neg_team_id")) if m.get("neg_team_id") else None
+            aff_team_id = m.get("aff_team_id")
+            neg_team_id = m.get("neg_team_id")
+            aff_school_id = team_school_map.get(aff_team_id) if aff_team_id else None
+            neg_school_id = team_school_map.get(neg_team_id) if neg_team_id else None
 
             for role in ["main_judge_staff_id", "sub_judge1_staff_id", "sub_judge2_staff_id", "timekeeper_staff_id"]:
                 sid = m.get(role)
@@ -124,16 +131,24 @@ def assign_judges(
                     count_map[sid] += 1
                     assigned_segs[sid].add(seg_id)
                     if section_id is not None:
+                        # 学校
                         if aff_school_id:
-                            if allow_reversed_past:
-                                assigned_schools[sid].setdefault(section_id, set()).add((aff_school_id, "aff"))
-                            else:
-                                assigned_schools[sid].setdefault(section_id, set()).add(aff_school_id)
+                            k = (aff_school_id, "aff") if allow_reversed_past else aff_school_id
+                            d = assigned_schools[sid].setdefault(section_id, {})
+                            d[k] = d.get(k, 0) + 1
                         if neg_school_id:
-                            if allow_reversed_past:
-                                assigned_schools[sid].setdefault(section_id, set()).add((neg_school_id, "neg"))
-                            else:
-                                assigned_schools[sid].setdefault(section_id, set()).add(neg_school_id)
+                            k = (neg_school_id, "neg") if allow_reversed_past else neg_school_id
+                            d = assigned_schools[sid].setdefault(section_id, {})
+                            d[k] = d.get(k, 0) + 1
+                        # チーム
+                        if aff_team_id:
+                            k = (aff_team_id, "aff") if allow_reversed_past else aff_team_id
+                            d = assigned_teams[sid].setdefault(section_id, {})
+                            d[k] = d.get(k, 0) + 1
+                        if neg_team_id:
+                            k = (neg_team_id, "neg") if allow_reversed_past else neg_team_id
+                            d = assigned_teams[sid].setdefault(section_id, {})
+                            d[k] = d.get(k, 0) + 1
 
     # 3. 制約判定および違反計算
     def check_assignable_with_violation(staff_id: int, match_idx: int, role_flag: str) -> tuple[bool, int]:
@@ -168,65 +183,113 @@ def assign_judges(
         if involved_schools:
             section_id = match.get("event_section_id")
             if section_id is not None:
-                past_set = assigned_schools[staff_id].get(section_id, set())
-                for sch in involved_schools:
-                    if allow_reversed_past:
-                        if sch == aff_school_id and (sch, "aff") in past_set:
-                            violation_count += 1
-                        if sch == neg_school_id and (sch, "neg") in past_set:
-                            violation_count += 1
-                    else:
-                        if sch in past_set:
-                            violation_count += 1
+                if allow_same_group_diff_team:
+                    # チーム単位で重複チェック
+                    past_team_dict = assigned_teams[staff_id].get(section_id, {})
+                    for t_id in [aff_team_id, neg_team_id]:
+                        if t_id is None:
+                            continue
+                        if allow_reversed_past:
+                            if t_id == aff_team_id and past_team_dict.get((t_id, "aff"), 0) > 0:
+                                violation_count += 1
+                            if t_id == neg_team_id and past_team_dict.get((t_id, "neg"), 0) > 0:
+                                violation_count += 1
+                        else:
+                            if past_team_dict.get(t_id, 0) > 0:
+                                violation_count += 1
+                else:
+                    # 従来通り、学校（グループ）単位で重複チェック
+                    past_dict = assigned_schools[staff_id].get(section_id, {})
+                    for sch in involved_schools:
+                        if allow_reversed_past:
+                            if sch == aff_school_id and past_dict.get((sch, "aff"), 0) > 0:
+                                violation_count += 1
+                            if sch == neg_school_id and past_dict.get((sch, "neg"), 0) > 0:
+                                violation_count += 1
+                        else:
+                            if past_dict.get(sch, 0) > 0:
+                                violation_count += 1
                             
         return True, violation_count
 
-    # 4. アサインおよびアンアサイン処理
+    # 4. アサインおよびアンアサイン処理 (マルチセットカウンタの更新)
     def assign(staff_id: int, match_idx: int, field: str):
         match = work_matches[match_idx]
         seg_id = match.get("event_timetable_segment_id")
         section_id = match.get("event_section_id")
-        aff_school_id = team_school_map.get(match.get("aff_team_id")) if match.get("aff_team_id") else None
-        neg_school_id = team_school_map.get(match.get("neg_team_id")) if match.get("neg_team_id") else None
+        aff_team_id = match.get("aff_team_id")
+        neg_team_id = match.get("neg_team_id")
+        aff_school_id = team_school_map.get(aff_team_id) if aff_team_id else None
+        neg_school_id = team_school_map.get(neg_team_id) if neg_team_id else None
 
         match[field] = staff_id
         count_map[staff_id] += 1
         assigned_segs[staff_id].add(seg_id)
         
         if section_id is not None:
+            # 学校
             if aff_school_id:
-                if allow_reversed_past:
-                    assigned_schools[staff_id].setdefault(section_id, set()).add((aff_school_id, "aff"))
-                else:
-                    assigned_schools[staff_id].setdefault(section_id, set()).add(aff_school_id)
+                k = (aff_school_id, "aff") if allow_reversed_past else aff_school_id
+                d = assigned_schools[staff_id].setdefault(section_id, {})
+                d[k] = d.get(k, 0) + 1
             if neg_school_id:
-                if allow_reversed_past:
-                    assigned_schools[staff_id].setdefault(section_id, set()).add((neg_school_id, "neg"))
-                else:
-                    assigned_schools[staff_id].setdefault(section_id, set()).add(neg_school_id)
+                k = (neg_school_id, "neg") if allow_reversed_past else neg_school_id
+                d = assigned_schools[staff_id].setdefault(section_id, {})
+                d[k] = d.get(k, 0) + 1
+            # チーム
+            if aff_team_id:
+                k = (aff_team_id, "aff") if allow_reversed_past else aff_team_id
+                d = assigned_teams[staff_id].setdefault(section_id, {})
+                d[k] = d.get(k, 0) + 1
+            if neg_team_id:
+                k = (neg_team_id, "neg") if allow_reversed_past else neg_team_id
+                d = assigned_teams[staff_id].setdefault(section_id, {})
+                d[k] = d.get(k, 0) + 1
 
     def unassign(staff_id: int, match_idx: int, field: str):
         match = work_matches[match_idx]
         seg_id = match.get("event_timetable_segment_id")
         section_id = match.get("event_section_id")
-        aff_school_id = team_school_map.get(match.get("aff_team_id")) if match.get("aff_team_id") else None
-        neg_school_id = team_school_map.get(match.get("neg_team_id")) if match.get("neg_team_id") else None
+        aff_team_id = match.get("aff_team_id")
+        neg_team_id = match.get("neg_team_id")
+        aff_school_id = team_school_map.get(aff_team_id) if aff_team_id else None
+        neg_school_id = team_school_map.get(neg_team_id) if neg_team_id else None
 
         match[field] = None
         count_map[staff_id] -= 1
         assigned_segs[staff_id].discard(seg_id)
         
         if section_id is not None:
+            # 学校
             if aff_school_id:
-                if allow_reversed_past:
-                    assigned_schools[staff_id].setdefault(section_id, set()).discard((aff_school_id, "aff"))
-                else:
-                    assigned_schools[staff_id].setdefault(section_id, set()).discard(aff_school_id)
+                k = (aff_school_id, "aff") if allow_reversed_past else aff_school_id
+                d = assigned_schools[staff_id].setdefault(section_id, {})
+                if k in d:
+                    d[k] -= 1
+                    if d[k] <= 0:
+                        del d[k]
             if neg_school_id:
-                if allow_reversed_past:
-                    assigned_schools[staff_id].setdefault(section_id, set()).discard((neg_school_id, "neg"))
-                else:
-                    assigned_schools[staff_id].setdefault(section_id, set()).discard(neg_school_id)
+                k = (neg_school_id, "neg") if allow_reversed_past else neg_school_id
+                d = assigned_schools[staff_id].setdefault(section_id, {})
+                if k in d:
+                    d[k] -= 1
+                    if d[k] <= 0:
+                        del d[k]
+            # チーム
+            if aff_team_id:
+                k = (aff_team_id, "aff") if allow_reversed_past else aff_team_id
+                d = assigned_teams[staff_id].setdefault(section_id, {})
+                if k in d:
+                    d[k] -= 1
+                    if d[k] <= 0:
+                        del d[k]
+            if neg_team_id:
+                k = (neg_team_id, "neg") if allow_reversed_past else neg_team_id
+                d = assigned_teams[staff_id].setdefault(section_id, {})
+                if k in d:
+                    d[k] -= 1
+                    if d[k] <= 0:
+                        del d[k]
 
     # 5. 候補取得
     def get_candidates(match_idx: int, role_flag: str) -> list[tuple[int, int]]:
@@ -275,8 +338,6 @@ def assign_judges(
         return backtrack(0)
 
     # 7. 段階的緩和 (違反しきい値を 0 から増やしながら高速探索)
-    # 探索の第一パスはノード上限を 10,000 とする（これによって解がない初期ステップが瞬時に終わる）
-    # それでも解が見つからない場合は、探索限界を 100,000 に広げて最終的な緩和探索を行う
     for node_lim in [10000, 100000]:
         for max_v in range(0, 100):
             success = run_search(max_v, node_lim)
@@ -304,6 +365,6 @@ def assign_judges(
                     )
                 return ordered, warning_msg
 
-    # 最終的なフォールバック（解がどうしても見つからない場合）
+    # 最終的なフォールバック
     warning_msg = "スタッフ数または担当可能時間の不足により、制約を満たす審判アサインメントを生成できませんでした。"
     return matches, warning_msg

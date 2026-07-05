@@ -89,6 +89,7 @@ export default function ControlPage() {
   const [fSegment, setFSegment] = useState("all");
   const [fSection, setFSection] = useState("all");
   const [allowReversedPast, setAllowReversedPast] = useState(false);
+  const [allowSameGroupDiffTeam, setAllowSameGroupDiffTeam] = useState(false);
 
   // Scroll Restorer to prevent page jumping during silent updates
   const mainScrollRef = useRef<number>(0);
@@ -271,7 +272,7 @@ export default function ControlPage() {
     setJudgeResult(null);
     setError(null);
     try {
-      const result = await assignJudges(eventId, segmentJudgeCounts, allowReversedPast);
+      const result = await assignJudges(eventId, segmentJudgeCounts, allowReversedPast, allowSameGroupDiffTeam);
       setJudgeResult(result);
       await load();
     } catch (e) {
@@ -1005,20 +1006,37 @@ export default function ControlPage() {
             </Table>
             {/* Card Footer with actions */}
             <div className="border-t border-border p-4 bg-secondary/5 space-y-4">
-              <div className="flex items-center gap-2 p-2.5 rounded-lg bg-white border border-border/85 shadow-xs">
-                <input
-                  id="allow-reversed-past-checkbox"
-                  type="checkbox"
-                  checked={allowReversedPast}
-                  onChange={(e) => setAllowReversedPast(e.target.checked)}
-                  className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20 cursor-pointer"
-                />
-                <label
-                  htmlFor="allow-reversed-past-checkbox"
-                  className="text-xs font-semibold text-foreground cursor-pointer select-none"
-                >
-                  肯否逆であれば過去に見た学校であっても割り当てを許可する
-                </label>
+              <div className="flex flex-col gap-2 p-2.5 rounded-lg bg-white border border-border/85 shadow-xs">
+                <div className="flex items-center gap-2">
+                  <input
+                    id="allow-reversed-past-checkbox"
+                    type="checkbox"
+                    checked={allowReversedPast}
+                    onChange={(e) => setAllowReversedPast(e.target.checked)}
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20 cursor-pointer"
+                  />
+                  <label
+                    htmlFor="allow-reversed-past-checkbox"
+                    className="text-xs font-semibold text-foreground cursor-pointer select-none"
+                  >
+                    肯否逆であれば過去に見た学校であっても割り当てを許可する
+                  </label>
+                </div>
+                <div className="flex items-center gap-2 border-t border-border/40 pt-2">
+                  <input
+                    id="allow-same-group-diff-team-checkbox"
+                    type="checkbox"
+                    checked={allowSameGroupDiffTeam}
+                    onChange={(e) => setAllowSameGroupDiffTeam(e.target.checked)}
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20 cursor-pointer"
+                  />
+                  <label
+                    htmlFor="allow-same-group-diff-team-checkbox"
+                    className="text-xs font-semibold text-foreground cursor-pointer select-none"
+                  >
+                    同じグループ（学校）に属していても別チームであれば割り当てを許可する
+                  </label>
+                </div>
               </div>
 
               {/* Action Buttons Row */}
