@@ -32,6 +32,30 @@ export default function BoardPage() {
   const [fSection, setFSection] = useState("all");
   const [fStatus, setFStatus] = useState("all");
 
+  useEffect(() => {
+    const savedSegment = sessionStorage.getItem("board_filter_segment");
+    const savedSection = sessionStorage.getItem("board_filter_section");
+    const savedStatus = sessionStorage.getItem("board_filter_status");
+    if (savedSegment) setFSegment(savedSegment);
+    if (savedSection) setFSection(savedSection);
+    if (savedStatus) setFStatus(savedStatus);
+  }, []);
+
+  const handleSegmentChange = (val: string) => {
+    setFSegment(val);
+    sessionStorage.setItem("board_filter_segment", val);
+  };
+
+  const handleSectionChange = (val: string) => {
+    setFSection(val);
+    sessionStorage.setItem("board_filter_section", val);
+  };
+
+  const handleStatusChange = (val: string) => {
+    setFStatus(val);
+    sessionStorage.setItem("board_filter_status", val);
+  };
+
   const load = useCallback(async () => {
     if (!eventId) return;
     try {
@@ -117,21 +141,21 @@ export default function BoardPage() {
 
       <Card>
         <CardHeader className="flex flex-wrap gap-3">
-          <select value={fSegment} onChange={(e) => setFSegment(e.target.value)}
+          <select value={fSegment} onChange={(e) => handleSegmentChange(e.target.value)}
             className="px-3 py-2 rounded-lg border border-border bg-white text-sm focus:ring-2 focus:ring-primary focus:outline-none">
             <option value="all">すべての時間枠</option>
             {segments.map(({ id, name }) => (
               <option key={id} value={String(id)}>{name}</option>
             ))}
           </select>
-          <select value={fSection} onChange={(e) => setFSection(e.target.value)}
+          <select value={fSection} onChange={(e) => handleSectionChange(e.target.value)}
             className="px-3 py-2 rounded-lg border border-border bg-white text-sm focus:ring-2 focus:ring-primary focus:outline-none">
             <option value="all">すべての部門</option>
             {sections.map(({ id, name }) => (
               <option key={id} value={String(id)}>{name}</option>
             ))}
           </select>
-          <select value={fStatus} onChange={(e) => setFStatus(e.target.value)}
+          <select value={fStatus} onChange={(e) => handleStatusChange(e.target.value)}
             className="px-3 py-2 rounded-lg border border-border bg-white text-sm focus:ring-2 focus:ring-primary focus:outline-none">
             <option value="all">すべてのステータス</option>
             <option value="confirmed">確定済み</option>
