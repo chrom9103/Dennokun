@@ -35,6 +35,8 @@ interface EditForm {
   main_judge_staff_id: string;
   sub_judge1_staff_id: string;
   sub_judge2_staff_id: string;
+  sub_judge3_staff_id: string;
+  sub_judge4_staff_id: string;
   timekeeper_staff_id: string;
 }
 
@@ -307,6 +309,8 @@ export default function ControlPage() {
       main_judge_staff_id: m.main_judge_staff_id != null ? String(m.main_judge_staff_id) : "",
       sub_judge1_staff_id: m.sub_judge1_staff_id != null ? String(m.sub_judge1_staff_id) : "",
       sub_judge2_staff_id: m.sub_judge2_staff_id != null ? String(m.sub_judge2_staff_id) : "",
+      sub_judge3_staff_id: m.sub_judge3_staff_id != null ? String(m.sub_judge3_staff_id) : "",
+      sub_judge4_staff_id: m.sub_judge4_staff_id != null ? String(m.sub_judge4_staff_id) : "",
       timekeeper_staff_id: m.timekeeper_staff_id != null ? String(m.timekeeper_staff_id) : "",
     });
   }
@@ -328,6 +332,8 @@ export default function ControlPage() {
       if (editForm.main_judge_staff_id) update.main_judge_staff_id = parseInt(editForm.main_judge_staff_id);
       if (editForm.sub_judge1_staff_id) update.sub_judge1_staff_id = parseInt(editForm.sub_judge1_staff_id);
       if (editForm.sub_judge2_staff_id) update.sub_judge2_staff_id = parseInt(editForm.sub_judge2_staff_id);
+      if (editForm.sub_judge3_staff_id) update.sub_judge3_staff_id = parseInt(editForm.sub_judge3_staff_id);
+      if (editForm.sub_judge4_staff_id) update.sub_judge4_staff_id = parseInt(editForm.sub_judge4_staff_id);
       if (editForm.timekeeper_staff_id) update.timekeeper_staff_id = parseInt(editForm.timekeeper_staff_id);
 
       await updateMatchAssignment(eventId, editForm.matchId, update);
@@ -340,12 +346,12 @@ export default function ControlPage() {
     }
   }
 
-  const [activeDropdown, setActiveDropdown] = useState<{ matchId: number; role: 'main' | 'sub1' | 'sub2' | 'timekeeper' } | null>(null);
+  const [activeDropdown, setActiveDropdown] = useState<{ matchId: number; role: 'main' | 'sub1' | 'sub2' | 'sub3' | 'sub4' | 'timekeeper' } | null>(null);
   const [isParamsOpen, setIsParamsOpen] = useState(false);
 
-  const [dragOverTarget, setDragOverTarget] = useState<{ matchId: number; role: 'main' | 'sub1' | 'sub2' | 'timekeeper' } | null>(null);
+  const [dragOverTarget, setDragOverTarget] = useState<{ matchId: number; role: 'main' | 'sub1' | 'sub2' | 'sub3' | 'sub4' | 'timekeeper' } | null>(null);
 
-  function handleDragStart(e: React.DragEvent, matchId: number, role: 'main' | 'sub1' | 'sub2' | 'timekeeper') {
+  function handleDragStart(e: React.DragEvent, matchId: number, role: 'main' | 'sub1' | 'sub2' | 'sub3' | 'sub4' | 'timekeeper') {
     e.dataTransfer.setData("text/plain", JSON.stringify({ matchId, role }));
     e.dataTransfer.effectAllowed = "move";
   }
@@ -355,7 +361,7 @@ export default function ControlPage() {
     e.preventDefault();
   }
 
-  function handleDragEnter(e: React.DragEvent, matchId: number, role: 'main' | 'sub1' | 'sub2' | 'timekeeper', isLocked: boolean) {
+  function handleDragEnter(e: React.DragEvent, matchId: number, role: 'main' | 'sub1' | 'sub2' | 'sub3' | 'sub4' | 'timekeeper', isLocked: boolean) {
     if (isLocked) return;
     e.preventDefault();
     setDragOverTarget({ matchId, role });
@@ -365,7 +371,7 @@ export default function ControlPage() {
     setDragOverTarget(null);
   }
 
-  async function handleDrop(e: React.DragEvent, targetMatchId: number, targetRole: 'main' | 'sub1' | 'sub2' | 'timekeeper', targetLocked: boolean) {
+  async function handleDrop(e: React.DragEvent, targetMatchId: number, targetRole: 'main' | 'sub1' | 'sub2' | 'sub3' | 'sub4' | 'timekeeper', targetLocked: boolean) {
     e.preventDefault();
     setDragOverTarget(null);
     if (targetLocked) return;
@@ -375,7 +381,7 @@ export default function ControlPage() {
       if (!dataStr) return;
       const { matchId: sourceMatchId, role: sourceRole } = JSON.parse(dataStr) as {
         matchId: number;
-        role: 'main' | 'sub1' | 'sub2' | 'timekeeper';
+        role: 'main' | 'sub1' | 'sub2' | 'sub3' | 'sub4' | 'timekeeper';
       };
 
       if (sourceMatchId === targetMatchId && sourceRole === targetRole) return;
@@ -391,11 +397,15 @@ export default function ControlPage() {
       const sourceStaffId = sourceRole === 'main' ? sourceMatch.main_judge_staff_id :
                            sourceRole === 'sub1' ? sourceMatch.sub_judge1_staff_id :
                            sourceRole === 'sub2' ? sourceMatch.sub_judge2_staff_id :
+                           sourceRole === 'sub3' ? sourceMatch.sub_judge3_staff_id :
+                           sourceRole === 'sub4' ? sourceMatch.sub_judge4_staff_id :
                            sourceMatch.timekeeper_staff_id;
 
       const targetStaffId = targetRole === 'main' ? targetMatch.main_judge_staff_id :
                            targetRole === 'sub1' ? targetMatch.sub_judge1_staff_id :
                            targetRole === 'sub2' ? targetMatch.sub_judge2_staff_id :
+                           targetRole === 'sub3' ? targetMatch.sub_judge3_staff_id :
+                           targetRole === 'sub4' ? targetMatch.sub_judge4_staff_id :
                            targetMatch.timekeeper_staff_id;
 
       // Optimistic local update
@@ -406,10 +416,14 @@ export default function ControlPage() {
             const sourceKey = sourceRole === 'main' ? 'main_judge_staff_id' :
                               sourceRole === 'sub1' ? 'sub_judge1_staff_id' :
                               sourceRole === 'sub2' ? 'sub_judge2_staff_id' :
+                              sourceRole === 'sub3' ? 'sub_judge3_staff_id' :
+                              sourceRole === 'sub4' ? 'sub_judge4_staff_id' :
                               'timekeeper_staff_id';
             const targetKey = targetRole === 'main' ? 'main_judge_staff_id' :
                               targetRole === 'sub1' ? 'sub_judge1_staff_id' :
                               targetRole === 'sub2' ? 'sub_judge2_staff_id' :
+                              targetRole === 'sub3' ? 'sub_judge3_staff_id' :
+                              targetRole === 'sub4' ? 'sub_judge4_staff_id' :
                               'timekeeper_staff_id';
             updated[sourceKey] = targetStaffId;
             updated[targetKey] = sourceStaffId;
@@ -419,6 +433,8 @@ export default function ControlPage() {
             const sourceKey = sourceRole === 'main' ? 'main_judge_staff_id' :
                               sourceRole === 'sub1' ? 'sub_judge1_staff_id' :
                               sourceRole === 'sub2' ? 'sub_judge2_staff_id' :
+                              sourceRole === 'sub3' ? 'sub_judge3_staff_id' :
+                              sourceRole === 'sub4' ? 'sub_judge4_staff_id' :
                               'timekeeper_staff_id';
             updated[sourceKey] = targetStaffId;
             return updated;
@@ -427,6 +443,8 @@ export default function ControlPage() {
             const targetKey = targetRole === 'main' ? 'main_judge_staff_id' :
                               targetRole === 'sub1' ? 'sub_judge1_staff_id' :
                               targetRole === 'sub2' ? 'sub_judge2_staff_id' :
+                              targetRole === 'sub3' ? 'sub_judge3_staff_id' :
+                              targetRole === 'sub4' ? 'sub_judge4_staff_id' :
                               'timekeeper_staff_id';
             updated[targetKey] = sourceStaffId;
             return updated;
@@ -440,10 +458,14 @@ export default function ControlPage() {
         const sourceKey = sourceRole === 'main' ? 'main_judge_staff_id' :
                           sourceRole === 'sub1' ? 'sub_judge1_staff_id' :
                           sourceRole === 'sub2' ? 'sub_judge2_staff_id' :
+                          sourceRole === 'sub3' ? 'sub_judge3_staff_id' :
+                          sourceRole === 'sub4' ? 'sub_judge4_staff_id' :
                           'timekeeper_staff_id';
         const targetKey = targetRole === 'main' ? 'main_judge_staff_id' :
                           targetRole === 'sub1' ? 'sub_judge1_staff_id' :
                           targetRole === 'sub2' ? 'sub_judge2_staff_id' :
+                          targetRole === 'sub3' ? 'sub_judge3_staff_id' :
+                          targetRole === 'sub4' ? 'sub_judge4_staff_id' :
                           'timekeeper_staff_id';
 
         update[sourceKey] = targetStaffId;
@@ -457,10 +479,14 @@ export default function ControlPage() {
         const sourceKey = sourceRole === 'main' ? 'main_judge_staff_id' :
                           sourceRole === 'sub1' ? 'sub_judge1_staff_id' :
                           sourceRole === 'sub2' ? 'sub_judge2_staff_id' :
+                          sourceRole === 'sub3' ? 'sub_judge3_staff_id' :
+                          sourceRole === 'sub4' ? 'sub_judge4_staff_id' :
                           'timekeeper_staff_id';
         const targetKey = targetRole === 'main' ? 'main_judge_staff_id' :
                           targetRole === 'sub1' ? 'sub_judge1_staff_id' :
                           targetRole === 'sub2' ? 'sub_judge2_staff_id' :
+                          targetRole === 'sub3' ? 'sub_judge3_staff_id' :
+                          targetRole === 'sub4' ? 'sub_judge4_staff_id' :
                           'timekeeper_staff_id';
 
         updateSource[sourceKey] = targetStaffId;
@@ -507,6 +533,8 @@ export default function ControlPage() {
           if (role === 'main') updated.main_judge_staff_id = staffId;
           if (role === 'sub1') updated.sub_judge1_staff_id = staffId;
           if (role === 'sub2') updated.sub_judge2_staff_id = staffId;
+          if (role === 'sub3') updated.sub_judge3_staff_id = staffId;
+          if (role === 'sub4') updated.sub_judge4_staff_id = staffId;
           if (role === 'timekeeper') updated.timekeeper_staff_id = staffId;
           return updated;
         }
@@ -518,6 +546,8 @@ export default function ControlPage() {
       if (role === 'main') update.main_judge_staff_id = staffId;
       if (role === 'sub1') update.sub_judge1_staff_id = staffId;
       if (role === 'sub2') update.sub_judge2_staff_id = staffId;
+      if (role === 'sub3') update.sub_judge3_staff_id = staffId;
+      if (role === 'sub4') update.sub_judge4_staff_id = staffId;
       if (role === 'timekeeper') update.timekeeper_staff_id = staffId;
 
       await updateMatchAssignment(eventId, matchId, update);
@@ -555,6 +585,8 @@ export default function ControlPage() {
         pastM.main_judge_staff_id === staffId ||
         pastM.sub_judge1_staff_id === staffId ||
         pastM.sub_judge2_staff_id === staffId ||
+        pastM.sub_judge3_staff_id === staffId ||
+        pastM.sub_judge4_staff_id === staffId ||
         pastM.timekeeper_staff_id === staffId
       );
       if (isAssigned && pastM.event_section_id === match.event_section_id) {
@@ -578,7 +610,7 @@ export default function ControlPage() {
     }
   }, [teams, segments, matches, allowReversedPast]);
 
-  const getSortedCandidates = (match: MatchListItem, role: 'main' | 'sub1' | 'sub2' | 'timekeeper', segmentStaffAssignments: Record<number, number>, seg: any) => {
+  const getSortedCandidates = (match: MatchListItem, role: 'main' | 'sub1' | 'sub2' | 'sub3' | 'sub4' | 'timekeeper', segmentStaffAssignments: Record<number, number>, seg: any) => {
     const candidates = staffs.filter((s) => {
       if (role === 'timekeeper') return s.can_be_timekeeper;
       if (role === 'main') return s.can_be_main_judge;
@@ -597,11 +629,15 @@ export default function ControlPage() {
             return m.main_judge_staff_id === staff.id ||
                    m.sub_judge1_staff_id === staff.id ||
                    m.sub_judge2_staff_id === staff.id ||
+                   m.sub_judge3_staff_id === staff.id ||
+                   m.sub_judge4_staff_id === staff.id ||
                    m.timekeeper_staff_id === staff.id;
           } else {
             return (role !== 'main' && m.main_judge_staff_id === staff.id) ||
                    (role !== 'sub1' && m.sub_judge1_staff_id === staff.id) ||
                    (role !== 'sub2' && m.sub_judge2_staff_id === staff.id) ||
+                   (role !== 'sub3' && m.sub_judge3_staff_id === staff.id) ||
+                   (role !== 'sub4' && m.sub_judge4_staff_id === staff.id) ||
                    (role !== 'timekeeper' && m.timekeeper_staff_id === staff.id);
           }
         }
@@ -654,10 +690,12 @@ export default function ControlPage() {
     });
   };
 
-  const renderSlot = (match: MatchListItem, role: 'main' | 'sub1' | 'sub2' | 'timekeeper', label: string, segmentStaffAssignments: Record<number, number>, seg: any) => {
+  const renderSlot = (match: MatchListItem, role: 'main' | 'sub1' | 'sub2' | 'sub3' | 'sub4' | 'timekeeper', label: string, segmentStaffAssignments: Record<number, number>, seg: any) => {
     const staffId = role === 'main' ? match.main_judge_staff_id :
                     role === 'sub1' ? match.sub_judge1_staff_id :
                     role === 'sub2' ? match.sub_judge2_staff_id :
+                    role === 'sub3' ? match.sub_judge3_staff_id :
+                    role === 'sub4' ? match.sub_judge4_staff_id :
                     match.timekeeper_staff_id;
 
     const staff = staffs.find((s) => s.id === staffId);
@@ -821,6 +859,12 @@ export default function ControlPage() {
     }
     if (expectedJudgeCount >= 3) {
       elements.push(renderSlot(m, 'sub2', '副', segmentStaffAssignments, seg));
+    }
+    if (expectedJudgeCount >= 4) {
+      elements.push(renderSlot(m, 'sub3', '副', segmentStaffAssignments, seg));
+    }
+    if (expectedJudgeCount >= 5) {
+      elements.push(renderSlot(m, 'sub4', '副', segmentStaffAssignments, seg));
     }
 
     return (
@@ -1139,6 +1183,8 @@ export default function ControlPage() {
                   m.main_judge_staff_id,
                   m.sub_judge1_staff_id,
                   m.sub_judge2_staff_id,
+                  m.sub_judge3_staff_id,
+                  m.sub_judge4_staff_id,
                   m.timekeeper_staff_id,
                 ].forEach((id) => {
                   if (id) {
@@ -1401,6 +1447,24 @@ export default function ControlPage() {
                 <label className="text-sm font-medium">副審2</label>
                 <select value={editForm.sub_judge2_staff_id}
                   onChange={(e) => setEditForm((f) => f ? { ...f, sub_judge2_staff_id: e.target.value } : f)}
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary focus:outline-none">
+                  <option value="">未設定</option>
+                  {judgeStaffs.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">副審3</label>
+                <select value={editForm.sub_judge3_staff_id}
+                  onChange={(e) => setEditForm((f) => f ? { ...f, sub_judge3_staff_id: e.target.value } : f)}
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary focus:outline-none">
+                  <option value="">未設定</option>
+                  {judgeStaffs.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">副審4</label>
+                <select value={editForm.sub_judge4_staff_id}
+                  onChange={(e) => setEditForm((f) => f ? { ...f, sub_judge4_staff_id: e.target.value } : f)}
                   className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary focus:outline-none">
                   <option value="">未設定</option>
                   {judgeStaffs.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}

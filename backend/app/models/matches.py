@@ -58,6 +58,8 @@ class MatchListItem(BaseModel):
     main_judge_staff_id: Optional[int] = None
     sub_judge1_staff_id: Optional[int] = None
     sub_judge2_staff_id: Optional[int] = None
+    sub_judge3_staff_id: Optional[int] = None
+    sub_judge4_staff_id: Optional[int] = None
     timekeeper_staff_id: Optional[int] = None
     judges_assignment_count: Optional[int] = None
     order_number_in_segment: Optional[int] = None
@@ -97,6 +99,8 @@ class MatchDetail(MatchListItem):
     main_judge_name: Optional[str] = None
     sub_judge1_name: Optional[str] = None
     sub_judge2_name: Optional[str] = None
+    sub_judge3_name: Optional[str] = None
+    sub_judge4_name: Optional[str] = None
     timekeeper_name: Optional[str] = None
     start_time: Optional[str] = None
     end_time: Optional[str] = None

@@ -16,6 +16,7 @@ async def get_all_matches(event_id: int) -> List[dict]:
                       m.is_result_confirmed, m.is_result_public, m.is_staffs_fixed,
                       m.order_number_in_segment, m.note, m.name,
                       m.main_judge_staff_id, m.sub_judge1_staff_id, m.sub_judge2_staff_id,
+                      m.sub_judge3_staff_id, m.sub_judge4_staff_id,
                       m.timekeeper_staff_id, m.judges_assignment_count,
                       m.created_at, m.updated_at,
                       ts.name AS timetable_segment_name,
@@ -59,6 +60,7 @@ async def get_match_by_id(match_id: int) -> Optional[dict]:
                       m.is_result_confirmed, m.is_result_public, m.is_staffs_fixed,
                       m.judges_assignment_count, m.order_number_in_segment, m.note, m.name,
                       m.main_judge_staff_id, m.sub_judge1_staff_id, m.sub_judge2_staff_id,
+                      m.sub_judge3_staff_id, m.sub_judge4_staff_id,
                       m.timekeeper_staff_id, m.created_at, m.updated_at,
                       ts.name AS timetable_segment_name,
                       ts.start_time, ts.end_time,
@@ -69,6 +71,8 @@ async def get_match_by_id(match_id: int) -> Optional[dict]:
                       mj.name AS main_judge_name,
                       sj1.name AS sub_judge1_name,
                       sj2.name AS sub_judge2_name,
+                      sj3.name AS sub_judge3_name,
+                      sj4.name AS sub_judge4_name,
                       tk.name AS timekeeper_name
                FROM event_matches m
                LEFT JOIN event_timetable_segments ts ON ts.id = m.event_timetable_segment_id AND ts.deleted_at IS NULL
@@ -79,6 +83,8 @@ async def get_match_by_id(match_id: int) -> Optional[dict]:
                LEFT JOIN event_staffs mj ON mj.id = m.main_judge_staff_id AND mj.deleted_at IS NULL
                LEFT JOIN event_staffs sj1 ON sj1.id = m.sub_judge1_staff_id AND sj1.deleted_at IS NULL
                LEFT JOIN event_staffs sj2 ON sj2.id = m.sub_judge2_staff_id AND sj2.deleted_at IS NULL
+               LEFT JOIN event_staffs sj3 ON sj3.id = m.sub_judge3_staff_id AND sj3.deleted_at IS NULL
+               LEFT JOIN event_staffs sj4 ON sj4.id = m.sub_judge4_staff_id AND sj4.deleted_at IS NULL
                LEFT JOIN event_staffs tk ON tk.id = m.timekeeper_staff_id AND tk.deleted_at IS NULL
                WHERE m.id = $1 AND m.deleted_at IS NULL""",
             match_id,

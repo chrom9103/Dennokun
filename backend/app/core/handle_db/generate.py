@@ -23,13 +23,16 @@ async def bulk_insert_matches(event_id: int, match_dicts: List[dict]) -> List[di
                            main_judge_staff_id,
                            sub_judge1_staff_id,
                            sub_judge2_staff_id,
+                           sub_judge3_staff_id,
+                           sub_judge4_staff_id,
                            timekeeper_staff_id,
                            judges_assignment_count,
                            order_number_in_segment
-                       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+                       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
                        RETURNING id, event_id, event_timetable_segment_id, event_room_id,
                                  event_section_id, aff_team_id, neg_team_id,
                                  main_judge_staff_id, sub_judge1_staff_id, sub_judge2_staff_id,
+                                 sub_judge3_staff_id, sub_judge4_staff_id,
                                  timekeeper_staff_id, judges_assignment_count, order_number_in_segment,
                                  is_result_confirmed, created_at, updated_at""",
                     event_id,
@@ -41,6 +44,8 @@ async def bulk_insert_matches(event_id: int, match_dicts: List[dict]) -> List[di
                     m.get("main_judge_staff_id"),
                     m.get("sub_judge1_staff_id"),
                     m.get("sub_judge2_staff_id"),
+                    m.get("sub_judge3_staff_id"),
+                    m.get("sub_judge4_staff_id"),
                     m.get("timekeeper_staff_id"),
                     m.get("judges_assignment_count", 0),
                     m.get("order_number_in_segment"),
@@ -105,6 +110,10 @@ async def update_match_assignment(
             fields["sub_judge1_staff_id"] = sub_judge1_staff_id
         if sub_judge2_staff_id is not None:
             fields["sub_judge2_staff_id"] = sub_judge2_staff_id
+        if sub_judge3_staff_id is not None:
+            fields["sub_judge3_staff_id"] = sub_judge3_staff_id
+        if sub_judge4_staff_id is not None:
+            fields["sub_judge4_staff_id"] = sub_judge4_staff_id
         if timekeeper_staff_id is not None:
             fields["timekeeper_staff_id"] = timekeeper_staff_id
         if event_section_id is not None:
@@ -140,13 +149,17 @@ async def bulk_update_match_judges(match_dicts: List[dict]) -> None:
                            main_judge_staff_id = $1,
                            sub_judge1_staff_id = $2,
                            sub_judge2_staff_id = $3,
-                           timekeeper_staff_id = $4,
-                           judges_assignment_count = $5,
+                           sub_judge3_staff_id = $4,
+                           sub_judge4_staff_id = $5,
+                           timekeeper_staff_id = $6,
+                           judges_assignment_count = $7,
                            updated_at = NOW()
-                       WHERE id = $6 AND deleted_at IS NULL""",
+                       WHERE id = $8 AND deleted_at IS NULL""",
                     m.get("main_judge_staff_id"),
                     m.get("sub_judge1_staff_id"),
                     m.get("sub_judge2_staff_id"),
+                    m.get("sub_judge3_staff_id"),
+                    m.get("sub_judge4_staff_id"),
                     m.get("timekeeper_staff_id"),
                     m.get("judges_assignment_count", 0),
                     m["id"],

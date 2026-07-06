@@ -67,7 +67,7 @@ def assign_judges(
         if j >= 1:
             roles.append(("main_judge_staff_id", "can_be_main_judge"))
         for i in range(max(0, j - 1)):
-            field = "sub_judge1_staff_id" if i == 0 else "sub_judge2_staff_id"
+            field = f"sub_judge{i+1}_staff_id"
             roles.append((field, "can_be_sub_judge"))
         roles.append(("timekeeper_staff_id", "can_be_timekeeper"))
         return roles
@@ -101,6 +101,8 @@ def assign_judges(
             m["main_judge_staff_id"] = None
             m["sub_judge1_staff_id"] = None
             m["sub_judge2_staff_id"] = None
+            m["sub_judge3_staff_id"] = None
+            m["sub_judge4_staff_id"] = None
             m["timekeeper_staff_id"] = None
             m["judges_assignment_count"] = 0
             work_matches.append(m)
@@ -125,7 +127,7 @@ def assign_judges(
             aff_school_id = team_school_map.get(aff_team_id) if aff_team_id else None
             neg_school_id = team_school_map.get(neg_team_id) if neg_team_id else None
 
-            for role in ["main_judge_staff_id", "sub_judge1_staff_id", "sub_judge2_staff_id", "timekeeper_staff_id"]:
+            for role in ["main_judge_staff_id", "sub_judge1_staff_id", "sub_judge2_staff_id", "sub_judge3_staff_id", "sub_judge4_staff_id", "timekeeper_staff_id"]:
                 sid = m.get(role)
                 if sid and sid in count_map:
                     count_map[sid] += 1
@@ -350,7 +352,7 @@ def assign_judges(
                 for m in ordered:
                     if not m.get("is_staffs_fixed"):
                         c = 0
-                        for r in ["main_judge_staff_id", "sub_judge1_staff_id", "sub_judge2_staff_id", "timekeeper_staff_id"]:
+                        for r in ["main_judge_staff_id", "sub_judge1_staff_id", "sub_judge2_staff_id", "sub_judge3_staff_id", "sub_judge4_staff_id"]:
                             if m.get(r):
                                 c += 1
                         m["judges_assignment_count"] = c
