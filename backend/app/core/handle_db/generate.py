@@ -85,6 +85,8 @@ async def update_match_assignment(
     main_judge_staff_id: Optional[int] = None,
     sub_judge1_staff_id: Optional[int] = None,
     sub_judge2_staff_id: Optional[int] = None,
+    sub_judge3_staff_id: Optional[int] = None,
+    sub_judge4_staff_id: Optional[int] = None,
     timekeeper_staff_id: Optional[int] = None,
     event_section_id: Optional[int] = None,
     order_number_in_segment: Optional[int] = None,

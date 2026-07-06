@@ -34,7 +34,7 @@ async def get_all_matches(event_id: int) -> List[dict]:
                LEFT JOIN event_teams nt ON nt.id = m.neg_team_id AND nt.deleted_at IS NULL
                LEFT JOIN event_staffs tk ON tk.id = m.timekeeper_staff_id AND tk.deleted_at IS NULL
                WHERE m.event_id = $1 AND m.deleted_at IS NULL
-               ORDER BY ts.order_number ASC NULLS LAST, m.order_number_in_segment ASC NULLS LAST, m.id ASC""",
+               ORDER BY ts.order_number ASC NULLS LAST, r.order_number ASC NULLS LAST, m.order_number_in_segment ASC NULLS LAST, m.id ASC""",
             event_id,
         )
         return [dict(r) for r in rows]
