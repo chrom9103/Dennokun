@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { Card, CardHeader, CardContent } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
@@ -87,7 +87,94 @@ export default function TeamsPage() {
     }
   }, [eventId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
+
+  const filteredSchoolsForModal = useMemo(() => {
+    if (!form.event_section_id) return schools;
+    const selectedSection = sections.find((s) => String(s.id) === form.event_section_id);
+    if (!selectedSection) return schools;
+
+    const sectionName = selectedSection.name;
+    const isHighSchool = sectionName.includes("高校");
+    const isJuniorHigh = sectionName.includes("中学");
+    const isElementary = sectionName.includes("小学");
+    const isUniversity = sectionName.includes("大学");
+
+    const filtered = schools.filter((s) => {
+      // 1. Keyword match
+      if (isHighSchool && (s.name.includes("高校") || s.name.includes("高等学校") || s.name_aliases?.some(a => a.includes("高校") || a.includes("高等学校")))) return true;
+      if (isJuniorHigh && (s.name.includes("中学") || s.name.includes("中学校") || s.name_aliases?.some(a => a.includes("中学") || a.includes("中学校")))) return true;
+      if (isElementary && (s.name.includes("小学") || s.name.includes("小学校") || s.name_aliases?.some(a => a.includes("小学") || a.includes("小学校")))) return true;
+      if (isUniversity && (s.name.includes("大学") || s.name_aliases?.some(a => a.includes("大学")))) return true;
+
+      // 2. Existing team association match (if a team of this school is already in this division/section)
+      const hasTeamInSection = teams.some((t) => String(t.event_school_id) === String(s.id) && String(t.event_section_id) === String(form.event_section_id));
+      if (hasTeamInSection) return true;
+
+      return false;
+    });
+
+    // Fallback: if no schools match or no keyword is detected, return all schools
+    if (filtered.length === 0 || (!isHighSchool && !isJuniorHigh && !isElementary && !isUniversity)) {
+      return schools;
+    }
+
+    return filtered;
+  }, [form.event_section_id, schools, sections, teams]);
+
+  const handleSectionChange = (sectionId: string) => {
+    setForm((f) => {
+      const selectedSection = sections.find((s) => String(s.id) === sectionId);
+      let nextSchoolId = f.event_school_id;
+
+      if (selectedSection) {
+        const sectionName = selectedSection.name;
+        const isHighSchool = sectionName.includes("高校");
+        const isJuniorHigh = sectionName.includes("中学");
+        const isElementary = sectionName.includes("小学");
+        const isUniversity = sectionName.includes("大学");
+
+        const currentSchool = schools.find((s) => String(s.id) === f.event_school_id);
+        if (currentSchool) {
+          let matches = false;
+          if (isHighSchool && (currentSchool.name.includes("高校") || currentSchool.name.includes("高等学校") || currentSchool.name_aliases?.some(a => a.includes("高校") || a.includes("高等学校")))) matches = true;
+          else if (isJuniorHigh && (currentSchool.name.includes("中学") || currentSchool.name.includes("中学校") || currentSchool.name_aliases?.some(a => a.includes("中学") || a.includes("中学校")))) matches = true;
+          else if (isElementary && (currentSchool.name.includes("小学") || currentSchool.name.includes("小学校") || currentSchool.name_aliases?.some(a => a.includes("小学") || a.includes("小学校")))) matches = true;
+          else if (isUniversity && (currentSchool.name.includes("大学") || currentSchool.name_aliases?.some(a => a.includes("大学")))) matches = true;
+          else if (!isHighSchool && !isJuniorHigh && !isElementary && !isUniversity) matches = true;
+
+          if (!matches) {
+            const hasTeamInSection = teams.some((t) => String(t.event_school_id) === String(currentSchool.id) && String(t.event_section_id) === sectionId);
+            if (hasTeamInSection) matches = true;
+          }
+
+          if (!matches) {
+            nextSchoolId = "";
+          }
+        }
+      }
+
+      return {
+        ...f,
+        event_section_id: sectionId,
+        event_school_id: nextSchoolId,
+      };
+    });
+  };
+
+  const handleSchoolChange = (schoolId: string) => {
+    const selectedSchool = schools.find((s) => String(s.id) === schoolId);
+    setForm((f) => {
+      const prevSchool = schools.find((s) => String(s.id) === f.event_school_id);
+      const shouldUpdateName = !f.name.trim() || (prevSchool && f.name === prevSchool.name);
+      return {
+        ...f,
+        event_school_id: schoolId,
+        name: shouldUpdateName && selectedSchool ? selectedSchool.name : f.name,
+      };
+    });
+  };
 
   const filteredTeams = teams.filter((t) => {
     const matchSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -362,30 +449,32 @@ export default function TeamsPage() {
       >
         <div className="space-y-4">
           {formError && <p className="text-sm text-destructive">{formError}</p>}
+          
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-foreground">部門</label>
+            <select value={form.event_section_id} onChange={(e) => handleSectionChange(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-white text-sm focus:ring-2 focus:ring-primary focus:outline-none">
+              <option value="">未設定</option>
+              {sections.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-foreground">学校</label>
+            <select value={form.event_school_id} onChange={(e) => handleSchoolChange(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-white text-sm focus:ring-2 focus:ring-primary focus:outline-none">
+              <option value="">未設定</option>
+              {filteredSchoolsForModal.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
+            </select>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <Input id="team-name" label="チーム名" placeholder="例：Team Alpha" value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} autoFocus />
             <Input id="team-order" label="申込順（任意）" type="number" placeholder="例：1" value={form.order_of_application}
               onChange={(e) => setForm((f) => ({ ...f, order_of_application: e.target.value }))} />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-foreground">学校</label>
-              <select value={form.event_school_id} onChange={(e) => setForm((f) => ({ ...f, event_school_id: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-white text-sm focus:ring-2 focus:ring-primary focus:outline-none">
-                <option value="">未設定</option>
-                {schools.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-foreground">部門</label>
-              <select value={form.event_section_id} onChange={(e) => setForm((f) => ({ ...f, event_section_id: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-white text-sm focus:ring-2 focus:ring-primary focus:outline-none">
-                <option value="">未設定</option>
-                {sections.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
-              </select>
-            </div>
-          </div>
+
           <div className="space-y-1.5">
             <label className="block text-sm font-medium text-foreground">グループ</label>
             <div className="flex gap-2">
@@ -405,6 +494,7 @@ export default function TeamsPage() {
               </div>
             </div>
           </div>
+          
           <div className="flex items-center gap-3">
             <label className="relative inline-flex items-center cursor-pointer">
               <input type="checkbox" className="sr-only peer" id="team-seed" checked={form.is_seed}

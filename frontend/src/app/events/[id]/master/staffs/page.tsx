@@ -11,7 +11,7 @@ import Modal from "@/components/ui/Modal";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/Table";
-import TsvImportButton from "@/components/elements/TsvImportButton";
+import CsvImportButton from "@/components/elements/CsvImportButton";
 import {
   Staff, StaffCreate, fetchStaffs, createStaff, updateStaff, deleteStaff,
   School, fetchSchools,
@@ -76,6 +76,7 @@ export default function StaffsPage() {
     }
   }, [eventId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   const filteredStaffs = staffs.filter((s) =>
@@ -174,22 +175,101 @@ export default function StaffsPage() {
 
   const handleImport = async (rows: string[][]) => {
     if (!eventId) return;
+    if (rows.length < 2) {
+      alert("インポートするデータがありません");
+      return;
+    }
+
     setIsImporting(true);
     try {
+      // Parse header row
+      const headers = rows[0].map((h) => h.trim());
+      const nameIdx = headers.indexOf("name");
+      const orderIdx = headers.indexOf("orderOfApplication");
+      const noteIdx = headers.indexOf("note");
+      const mainJudgeIdx = headers.indexOf("canBeMainJudge");
+      const subJudgeIdx = headers.indexOf("canBeSubJudge");
+      const timekeeperIdx = headers.indexOf("canBeTimekeeper");
+      const schoolIdx = headers.indexOf("interestedSchoolNameList");
+      const segmentIdx = headers.indexOf("presentTimetableSegmentNameList");
+
+      if (nameIdx === -1) {
+        throw new Error("CSVに必須列 'name' が存在しません");
+      }
+
       let count = 0;
-      for (const row of rows) {
-        if (row.length < 2) continue;
-        const [orderStr, name, rolesStr] = row;
-        const roles = (rolesStr || "").split("|").map((r) => r.trim());
+      // Skip header row
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (row.length <= nameIdx) continue;
+        
+        const rawName = row[nameIdx];
+        if (!rawName || !rawName.trim()) continue;
+
+        const name = rawName.trim();
+        
+        const orderStr = orderIdx !== -1 ? row[orderIdx] : "";
+        const orderOfApplication = orderStr ? parseInt(orderStr, 10) : null;
+        
+        const noteStr = noteIdx !== -1 ? row[noteIdx] : "";
+        const note = noteStr.trim() || null;
+
+        const mainJudgeVal = mainJudgeIdx !== -1 ? row[mainJudgeIdx] : "";
+        const canBeMainJudge = mainJudgeVal === "1" || mainJudgeVal.toLowerCase() === "true";
+
+        const subJudgeVal = subJudgeIdx !== -1 ? row[subJudgeIdx] : "";
+        const canBeSubJudge = subJudgeVal === "1" || subJudgeVal.toLowerCase() === "true";
+
+        const timekeeperVal = timekeeperIdx !== -1 ? row[timekeeperIdx] : "";
+        const canBeTimekeeper = timekeeperVal === "1" || timekeeperVal.toLowerCase() === "true";
+
+        // Map school names to IDs
+        const schoolNamesStr = schoolIdx !== -1 ? row[schoolIdx] : "";
+        const schoolNames = schoolNamesStr
+          ? schoolNamesStr.split(",").map((s) => s.trim()).filter(Boolean)
+          : [];
+        const interestedSchoolIds = schoolNames
+          .map((schoolName) => {
+            const found = schools.find((s) => {
+              if (s.name === schoolName || s.name_aliases?.includes(schoolName)) return true;
+              if (schoolName.includes(s.name) || s.name.includes(schoolName)) return true;
+              if (s.name_aliases?.some(alias => schoolName.includes(alias) || alias.includes(schoolName))) return true;
+              return false;
+            });
+            return found ? found.id : null;
+          })
+          .filter((id): id is number => id !== null);
+
+        // Map segment names to IDs
+        const segmentNamesStr = segmentIdx !== -1 ? row[segmentIdx] : "";
+        const segmentNames = segmentNamesStr
+          ? segmentNamesStr.split(",").map((s) => s.trim()).filter(Boolean)
+          : [];
+        const presentSegmentIds = segmentNames
+          .map((segName) => {
+            const found = segments.find((s) => {
+              if (s.name === segName || s.name_aliases?.includes(segName)) return true;
+              if (segName.includes(s.name) || s.name.includes(segName)) return true;
+              if (s.name_aliases?.some(alias => segName.includes(alias) || alias.includes(segName))) return true;
+              return false;
+            });
+            return found ? found.id : null;
+          })
+          .filter((id): id is number => id !== null);
+
         await createStaff(eventId, {
-          name: name.trim(),
-          order_of_application: orderStr ? parseInt(orderStr) : null,
-          can_be_main_judge: roles.includes("主審"),
-          can_be_sub_judge: roles.includes("副審"),
-          can_be_timekeeper: roles.includes("司会"),
+          name,
+          order_of_application: orderOfApplication,
+          note,
+          can_be_main_judge: canBeMainJudge,
+          can_be_sub_judge: canBeSubJudge,
+          can_be_timekeeper: canBeTimekeeper,
+          interested_school_ids: interestedSchoolIds,
+          present_segment_ids: presentSegmentIds,
         });
         count++;
       }
+
       await load();
       alert(`${count}名のスタッフをインポートしました`);
     } catch (e) {
@@ -213,7 +293,7 @@ export default function StaffsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <TsvImportButton onImport={handleImport} isLoading={isImporting} />
+          <CsvImportButton onImport={handleImport} isLoading={isImporting} />
           <Button icon="person_add" onClick={openCreate}>スタッフ追加</Button>
         </div>
       </div>
