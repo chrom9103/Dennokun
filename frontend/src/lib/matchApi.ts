@@ -151,6 +151,7 @@ export interface StandingsEntry {
   wins: number;
   losses: number;
   matches_played: number;
+  total_votes: number;
   total_comm: number;
   total_manner: number;
   rank: number;

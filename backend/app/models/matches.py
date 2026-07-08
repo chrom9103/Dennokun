@@ -134,6 +134,7 @@ class StandingsEntry(BaseModel):
     wins: int
     losses: int
     matches_played: int
+    total_votes: int
     total_comm: int
     total_manner: int
     rank: int
