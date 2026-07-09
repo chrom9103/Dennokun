@@ -183,10 +183,14 @@ export async function saveMatchResult(
   });
 }
 
-export async function fetchStandings(eventId: number): Promise<StandingsEntry[]> {
-  return apiFetch(`/api/events/${eventId}/standings`);
+export async function fetchStandings(
+  eventId: number,
+  round: "pre" | "main" | "all" = "pre"
+): Promise<StandingsEntry[]> {
+  return apiFetch(`/api/events/${eventId}/standings?round=${round}`);
 }
 
 export async function fetchMatchSummary(eventId: number): Promise<MatchSummary> {
   return apiFetch(`/api/events/${eventId}/match-summary`);
 }
+

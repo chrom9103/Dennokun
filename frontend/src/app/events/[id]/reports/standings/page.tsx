@@ -11,6 +11,14 @@ import {
 } from "@/components/ui/Table";
 import { fetchStandings, fetchMatchSummary, StandingsEntry, MatchSummary } from "@/lib/matchApi";
 
+type RoundType = "pre" | "main" | "all";
+
+const ROUND_LABELS: Record<RoundType, string> = {
+  pre: "予選リーグ",
+  main: "本戦",
+  all: "総合（全試合）",
+};
+
 function TrophyIcon({ rank }: { rank: number }) {
   if (rank === 1) return <Icon name="emoji_events" size={20} className="text-yellow-500" />;
   if (rank === 2) return <Icon name="emoji_events" size={20} className="text-gray-400" />;
@@ -23,27 +31,26 @@ export default function StandingsPage() {
   const rawId = Array.isArray(params?.id) ? params.id[0] : params?.id;
   const eventId = rawId ? parseInt(rawId as string) : null;
 
+  const [activeRound, setActiveRound] = useState<RoundType>("pre");
   const [standings, setStandings] = useState<StandingsEntry[]>([]);
   const [summary, setSummary] = useState<MatchSummary>({ total: 0, confirmed: 0, scheduled: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<number | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (round: RoundType) => {
     if (!eventId) return;
     try {
       setLoading(true);
       setError(null);
       const [standingsData, summaryData] = await Promise.all([
-        fetchStandings(eventId),
+        fetchStandings(eventId, round),
         fetchMatchSummary(eventId),
       ]);
       setStandings(standingsData);
       setSummary(summaryData);
       // Default to first section
-      if (standingsData.length > 0 && activeSection === null) {
-        setActiveSection(standingsData[0].event_section_id ?? null);
-      }
+      setActiveSection(standingsData.length > 0 ? (standingsData[0].event_section_id ?? null) : null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "データの取得に失敗しました");
     } finally {
@@ -51,7 +58,7 @@ export default function StandingsPage() {
     }
   }, [eventId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(activeRound); }, [load, activeRound]);
 
   // Get unique sections
   const sections = Array.from(
@@ -64,9 +71,9 @@ export default function StandingsPage() {
 
   const handleExport = () => {
     const rows = [
-      ["順位", "チーム名", "学校", "勝", "負", "試合数", "コミュ合計", "マナー合計"],
+      ["ラウンド", "順位", "チーム名", "学校", "勝", "負", "試合数", "コミュ合計", "マナー合計"],
       ...filteredStandings.map((s) => [
-        s.rank, s.team_name, s.school_name ?? "", s.wins, s.losses,
+        ROUND_LABELS[activeRound], s.rank, s.team_name, s.school_name ?? "", s.wins, s.losses,
         s.matches_played, s.total_comm, s.total_manner,
       ]),
     ];
@@ -75,7 +82,7 @@ export default function StandingsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `standings_${eventId}.csv`;
+    a.download = `standings_${activeRound}_${eventId}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -94,9 +101,26 @@ export default function StandingsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outlined" size="sm" icon="refresh" onClick={load}>更新</Button>
+          <Button variant="outlined" size="sm" icon="refresh" onClick={() => load(activeRound)}>更新</Button>
           <Button variant="outlined" icon="download" onClick={handleExport}>CSVエクスポート</Button>
         </div>
+      </div>
+
+      {/* Round tabs */}
+      <div className="flex gap-2 flex-wrap p-1 bg-muted/30 rounded-xl w-fit border border-border">
+        {(["pre", "main", "all"] as RoundType[]).map((round) => (
+          <button
+            key={round}
+            onClick={() => setActiveRound(round)}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+              activeRound === round
+                ? "bg-white text-primary shadow-sm border border-border"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {ROUND_LABELS[round]}
+          </button>
+        ))}
       </div>
 
       {error && (
@@ -111,21 +135,21 @@ export default function StandingsPage() {
         <div className="bg-white rounded-xl border border-border p-4 flex items-center gap-3 shadow-sm">
           <div className="p-2 rounded-lg bg-info-light/40"><Icon name="groups" size={24} className="text-primary" /></div>
           <div>
-            <p className="text-xs text-muted-foreground">参加チーム</p>
+            <p className="text-xs text-muted-foreground">集計チーム数</p>
             <p className="text-xl font-bold">{standings.length} チーム</p>
           </div>
         </div>
         <div className="bg-white rounded-xl border border-border p-4 flex items-center gap-3 shadow-sm">
           <div className="p-2 rounded-lg bg-green-50"><Icon name="check_circle" size={24} className="text-green-600" /></div>
           <div>
-            <p className="text-xs text-muted-foreground">完了済み試合</p>
+            <p className="text-xs text-muted-foreground">完了済み試合（全体）</p>
             <p className="text-xl font-bold">{summary.confirmed} / {summary.total}</p>
           </div>
         </div>
         <div className="bg-white rounded-xl border border-border p-4 flex items-center gap-3 shadow-sm">
           <div className="p-2 rounded-lg bg-amber-50"><Icon name="pending_actions" size={24} className="text-amber-600" /></div>
           <div>
-            <p className="text-xs text-muted-foreground">残り試合数</p>
+            <p className="text-xs text-muted-foreground">残り試合数（全体）</p>
             <p className="text-xl font-bold">{summary.total - summary.confirmed} 試合</p>
           </div>
         </div>
@@ -149,7 +173,13 @@ export default function StandingsPage() {
               </button>
             ))}
             {sections.length === 0 && !loading && (
-              <p className="text-sm text-muted-foreground">部門なし</p>
+              <p className="text-sm text-muted-foreground">
+                {activeRound === "main"
+                  ? "本戦の確定済み結果がまだありません"
+                  : activeRound === "pre"
+                  ? "予選の確定済み結果がまだありません"
+                  : "確定済み結果がまだありません"}
+              </p>
             )}
           </div>
           <div className="text-xs text-muted-foreground flex items-center gap-1">
@@ -191,7 +221,7 @@ export default function StandingsPage() {
                   <TableCell colSpan={9} className="py-20 text-center text-muted-foreground">
                     <div className="flex flex-col items-center gap-2">
                       <Icon name="analytics" size={40} className="opacity-20" />
-                      <p>試合結果がまだ確定していません</p>
+                      <p>{ROUND_LABELS[activeRound]}の確定済み結果がありません</p>
                       <p className="text-xs">結果を「確定保存」すると順位が表示されます</p>
                     </div>
                   </TableCell>
