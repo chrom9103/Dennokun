@@ -570,9 +570,6 @@ export default function FinalResultsPage() {
                   .map((s) => ({ ...s, effectiveRank: getEffectiveRank(s) }))
                   .sort((a, b) => a.effectiveRank - b.effectiveRank);
 
-                const top3 = sectionStandings.filter((s) => s.effectiveRank <= 3);
-                const rest = sectionStandings.filter((s) => s.effectiveRank > 3);
-
                 return (
                   <div key={id} className="space-y-4">
                     <div className="flex items-center gap-3">
@@ -582,43 +579,7 @@ export default function FinalResultsPage() {
                       </Badge>
                     </div>
 
-                    {/* Top 3 podium */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      {[1, 2, 3].map((rank) => {
-                        const entry = top3.find((s) => s.effectiveRank === rank);
-                        if (!entry) return null;
-                        const bgColors = [
-                          "bg-gradient-to-br from-yellow-50 to-amber-100 border-yellow-300",
-                          "bg-gradient-to-br from-gray-50 to-gray-100 border-gray-300",
-                          "bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200",
-                        ];
-                        return (
-                          <div
-                            key={rank}
-                            className={`rounded-2xl border p-6 text-center ${bgColors[rank - 1]} ${
-                              rank === 1 ? "sm:order-2 shadow-lg" : rank === 2 ? "sm:order-1" : "sm:order-3"
-                            }`}
-                          >
-                            <MedalIcon rank={rank} />
-                            <p className="text-2xl font-bold mt-2">{entry.team_name}</p>
-                            <p className="text-muted-foreground text-sm mt-1">{entry.school_name ?? ""}</p>
-                            <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-                              <div className="bg-white/60 rounded-lg p-2">
-                                <p className="text-xs text-muted-foreground">勝</p>
-                                <p className="font-bold">{entry.wins}</p>
-                              </div>
-                              <div className="bg-white/60 rounded-lg p-2">
-                                <p className="text-xs text-muted-foreground">コミュ計</p>
-                                <p className="font-bold">{entry.total_comm}</p>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* 4位以下 */}
-                    {rest.length > 0 && (
+                    {sectionStandings.length > 0 && (
                       <div className="bg-white rounded-xl border border-border overflow-hidden">
                         <table className="w-full text-sm">
                           <thead className="bg-secondary">
@@ -632,7 +593,7 @@ export default function FinalResultsPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {rest.map((s) => (
+                            {sectionStandings.map((s) => (
                               <tr key={s.team_id} className="border-t border-border hover:bg-muted/30 transition-colors">
                                 <td className="text-center px-4 py-3 text-muted-foreground font-medium">{s.effectiveRank}</td>
                                 <td className="px-4 py-3 font-medium">{s.team_name}</td>
