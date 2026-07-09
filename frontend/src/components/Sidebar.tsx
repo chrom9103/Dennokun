@@ -125,6 +125,7 @@ function buildNavItems(eventId?: string): NavItem[] {
       children: [
         { title: "組み合わせ制御", path: `/events/${eventId}/matches/control`, icon: "calendar_month" },
         { title: "進行ボード", path: `/events/${eventId}/matches/board`, icon: "view_list" },
+        { title: "スタッフタスク表", path: `/events/${eventId}/matches/staff-tasks`, icon: "event_seat" },
       ],
     },
     {

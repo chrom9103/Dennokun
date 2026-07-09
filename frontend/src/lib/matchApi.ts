@@ -184,8 +184,9 @@ export async function saveMatchResult(
   });
 }
 
-export async function fetchStandings(eventId: number): Promise<StandingsEntry[]> {
-  return apiFetch(`/api/events/${eventId}/standings`);
+export async function fetchStandings(eventId: number, round?: string): Promise<StandingsEntry[]> {
+  const query = round ? `?round=${round}` : "";
+  return apiFetch(`/api/events/${eventId}/standings${query}`);
 }
 
 export async function fetchMatchSummary(eventId: number): Promise<MatchSummary> {
