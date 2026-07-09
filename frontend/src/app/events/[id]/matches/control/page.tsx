@@ -92,6 +92,7 @@ export default function ControlPage() {
   const [fSection, setFSection] = useState("all");
   const [allowReversedPast, setAllowReversedPast] = useState(false);
   const [allowSameGroupDiffTeam, setAllowSameGroupDiffTeam] = useState(false);
+  const [unassignedStaffSegId, setUnassignedStaffSegId] = useState<number | null>(null);
 
   // Scroll Restorer to prevent page jumping during silent updates
   const mainScrollRef = useRef<number>(0);
@@ -1193,6 +1194,31 @@ export default function ControlPage() {
                 });
               });
 
+              const getUnassignedStaffs = () => {
+                const assigned = new Set<number>([
+                  ...segMatches.map((m) => m.main_judge_staff_id),
+                  ...segMatches.map((m) => m.sub_judge1_staff_id),
+                  ...segMatches.map((m) => m.sub_judge2_staff_id),
+                  ...segMatches.map((m) => m.sub_judge3_staff_id),
+                  ...segMatches.map((m) => m.sub_judge4_staff_id),
+                  ...segMatches.map((m) => m.timekeeper_staff_id),
+                ].filter((id): id is number => id != null));
+                const list = staffs.filter((s) => {
+                  const isPresentInSeg =
+                    s.present_segment_ids.length === 0 || s.present_segment_ids.includes(seg.id);
+                  if (!isPresentInSeg) return false;
+                  if (assigned.has(s.id)) return false;
+                  return true;
+                });
+                return list.sort((a, b) => {
+                  const hasRoleA = a.can_be_main_judge || a.can_be_sub_judge || a.can_be_timekeeper;
+                  const hasRoleB = b.can_be_main_judge || b.can_be_sub_judge || b.can_be_timekeeper;
+                  if (hasRoleA && !hasRoleB) return -1;
+                  if (!hasRoleA && hasRoleB) return 1;
+                  return 0;
+                });
+              };
+
               return (
                 <Card key={seg.id} className="relative overflow-visible border-border/80 shadow-sm">
                   <CardHeader className="bg-muted/30 border-b border-border/60 py-3 flex flex-row items-center justify-between rounded-t-lg">
@@ -1205,7 +1231,14 @@ export default function ControlPage() {
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setUnassignedStaffSegId(seg.id)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-xs font-semibold hover:bg-amber-100 transition-colors"
+                      >
+                        <Icon name="person_off" size={14} />
+                        未割当スタッフ
+                      </button>
                       <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold select-none text-muted-foreground hover:text-foreground">
                         <input
                           type="checkbox"
@@ -1218,6 +1251,61 @@ export default function ControlPage() {
                       <Badge variant="outline" className="bg-white border-border/80 text-xs font-semibold">{segMatches.length} 試合</Badge>
                     </div>
                   </CardHeader>
+
+                  {/* 未割当スタッフ モーダル */}
+                  {unassignedStaffSegId === seg.id && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setUnassignedStaffSegId(null)}>
+                      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Icon name="person_off" size={22} className="text-amber-600" />
+                            <h3 className="font-bold text-base">未割当スタッフ — {seg.name}</h3>
+                          </div>
+                          <button onClick={() => setUnassignedStaffSegId(null)} className="p-1.5 rounded-lg hover:bg-muted">
+                            <Icon name="close" size={20} className="text-muted-foreground" />
+                          </button>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          この時間枠に稼働可能な、割り当てられていないスタッフの一覧です。
+                        </p>
+                        
+                        {/* 一覧 */}
+                        {(() => {
+                          const list = getUnassignedStaffs();
+                          if (list.length === 0) {
+                            return (
+                              <div className="py-8 text-center text-muted-foreground text-sm">
+                                <Icon name="check_circle" size={32} className="text-green-500 mx-auto mb-2" />
+                                <p>全員が割り当て済みです</p>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                              {list.map((s) => (
+                                <div key={s.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border bg-white hover:bg-muted/20">
+                                  <div className="p-1.5 rounded-full bg-amber-100">
+                                    <Icon name="person" size={16} className="text-amber-600" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-semibold text-sm">{s.name}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {[s.can_be_main_judge && "主審可", s.can_be_sub_judge && "副審可", s.can_be_timekeeper && "タイムキーパー可"]
+                                        .filter(Boolean).join(" / ")}
+                                    </p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                        <Button variant="outlined" size="sm" className="w-full" onClick={() => setUnassignedStaffSegId(null)}>
+                          閉じる
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
                   <CardContent className="p-0 bg-slate-50/30">
                     {/* Responsive View (Insuficient width / Mobile / Tablet) */}
                     <div className="xl:hidden divide-y divide-border/60">
