@@ -71,7 +71,8 @@ async def get_pre_round_standings(event_id: int) -> List[dict]:
                 RANK() OVER (
                     PARTITION BY ts.event_section_id
                     ORDER BY ts.wins DESC, ts.total_votes DESC, ts.total_comm DESC
-                ) AS rank
+                ) AS rank,
+                t.final_rank AS final_rank
             FROM team_stats ts
             JOIN event_teams t ON t.id = ts.team_id AND t.deleted_at IS NULL
             LEFT JOIN event_schools sc ON sc.id = t.event_school_id AND sc.deleted_at IS NULL
@@ -150,7 +151,8 @@ async def get_main_round_standings(event_id: int) -> List[dict]:
                 RANK() OVER (
                     PARTITION BY ts.event_section_id
                     ORDER BY ts.wins DESC, ts.total_comm DESC
-                ) AS rank
+                ) AS rank,
+                t.final_rank AS final_rank
             FROM team_stats ts
             JOIN event_teams t ON t.id = ts.team_id AND t.deleted_at IS NULL
             LEFT JOIN event_schools sc ON sc.id = t.event_school_id AND sc.deleted_at IS NULL
@@ -222,7 +224,8 @@ async def get_all_standings(event_id: int) -> List[dict]:
                 RANK() OVER (
                     PARTITION BY ts.event_section_id
                     ORDER BY ts.wins DESC, ts.total_comm DESC
-                ) AS rank
+                ) AS rank,
+                t.final_rank AS final_rank
             FROM team_stats ts
             JOIN event_teams t ON t.id = ts.team_id AND t.deleted_at IS NULL
             LEFT JOIN event_schools sc ON sc.id = t.event_school_id AND sc.deleted_at IS NULL

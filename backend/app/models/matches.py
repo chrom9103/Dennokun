@@ -138,9 +138,15 @@ class StandingsEntry(BaseModel):
     total_comm: int
     total_manner: int
     rank: int
+    final_rank: Optional[int] = None
 
     class Config:
         from_attributes = True
+
+
+class FinalRankUpdate(BaseModel):
+    team_id: int
+    final_rank: Optional[int] = None
 
 
 class MatchSummary(BaseModel):

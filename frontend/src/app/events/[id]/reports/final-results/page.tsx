@@ -6,7 +6,7 @@ import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
 import Badge from "@/components/ui/Badge";
 import Modal from "@/components/ui/Modal";
-import { fetchStandings, fetchMatchSummary, fetchMatches, StandingsEntry, MatchSummary } from "@/lib/matchApi";
+import { fetchStandings, fetchMatchSummary, fetchMatches, saveFinalStandings, StandingsEntry, MatchSummary } from "@/lib/matchApi";
 import { fetchSchools, fetchTeams, fetchSections, fetchTimetableSegments, Section, TimetableSegment } from "@/lib/masterApi";
 import MatchResultExport from "@/components/pages/events/reports/MatchResultExport";
 import TournamentTree from "@/components/pages/events/reports/TournamentTree";
@@ -33,11 +33,12 @@ interface TieGroup {
 interface TieResolveModalProps {
   tieGroups: TieGroup[];
   onResolve: (resolved: Map<number, number>) => void; // teamId -> finalRank
-  onSkip: () => void;
+  onCancel: () => void;
 }
 
-function TieResolveModal({ tieGroups, onResolve, onSkip }: TieResolveModalProps) {
+function TieResolveModal({ tieGroups, onResolve, onCancel }: TieResolveModalProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [skippedGroups, setSkippedGroups] = useState<Set<number>>(() => new Set());
   const [orders, setOrders] = useState<Map<number, StandingsEntry[]>>(
     () => new Map(tieGroups.map((g, i) => [i, [...g.teams]]))
   );
@@ -73,19 +74,41 @@ function TieResolveModal({ tieGroups, onResolve, onSkip }: TieResolveModalProps)
     });
   }
 
-  function handleNext() {
-    if (currentIndex < tieGroups.length - 1) {
-      setCurrentIndex((i) => i + 1);
-    } else {
-      // 全グループの解決結果を集約
-      const resolved = new Map<number, number>();
-      tieGroups.forEach((group, idx) => {
+  function submitResolve(skipped: Set<number>) {
+    const resolved = new Map<number, number>();
+    tieGroups.forEach((group, idx) => {
+      if (skipped.has(idx)) {
+        // Skipped: keep the tie rank for all teams in this group
+        group.teams.forEach((team) => {
+          resolved.set(team.team_id, group.rank);
+        });
+      } else {
         const ordered = orders.get(idx) ?? group.teams;
         ordered.forEach((team, pos) => {
           resolved.set(team.team_id, group.rank + pos);
         });
-      });
-      onResolve(resolved);
+      }
+    });
+    onResolve(resolved);
+  }
+
+  function handleNext() {
+    if (currentIndex < tieGroups.length - 1) {
+      setCurrentIndex((i) => i + 1);
+    } else {
+      submitResolve(skippedGroups);
+    }
+  }
+
+  function handleSkip() {
+    const nextSkipped = new Set(skippedGroups);
+    nextSkipped.add(currentIndex);
+    setSkippedGroups(nextSkipped);
+
+    if (currentIndex < tieGroups.length - 1) {
+      setCurrentIndex((i) => i + 1);
+    } else {
+      submitResolve(nextSkipped);
     }
   }
 
@@ -93,9 +116,17 @@ function TieResolveModal({ tieGroups, onResolve, onSkip }: TieResolveModalProps)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-5">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-5 relative">
+        {/* Cancel Button */}
+        <button
+          onClick={onCancel}
+          className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Icon name="close" size={20} />
+        </button>
+
         {/* Header */}
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-3 pr-8">
           <div className="p-2 rounded-full bg-amber-100 shrink-0">
             <Icon name="warning" size={24} className="text-amber-600" />
           </div>
@@ -159,7 +190,7 @@ function TieResolveModal({ tieGroups, onResolve, onSkip }: TieResolveModalProps)
           <Button className="flex-1" onClick={handleNext}>
             {isLast ? "順位を確定する" : "次へ"}
           </Button>
-          <Button variant="outlined" onClick={onSkip}>
+          <Button variant="outlined" onClick={handleSkip}>
             スキップ（タイのまま）
           </Button>
         </div>
@@ -216,8 +247,21 @@ export default function FinalResultsPage() {
       setSections(sectionsData);
       setSegments(segmentsData);
 
-      // タイ検出
-      detectTies(standingsData);
+      // DBから取得した確定順位（final_rank）を resolvedRanks に反映
+      const initialResolved = new Map<number, number>();
+      let hasSavedFinalRank = false;
+      standingsData.forEach((s) => {
+        if (s.final_rank != null) {
+          initialResolved.set(s.team_id, s.final_rank);
+          hasSavedFinalRank = true;
+        }
+      });
+      setResolvedRanks(initialResolved);
+
+      // まだ一度も手動確定（タイ解消）がDB保存されていない場合のみ、自動でタイ解消ダイアログを表示
+      if (!hasSavedFinalRank) {
+        detectTies(standingsData);
+      }
     } catch {
       // fail silently
     } finally {
@@ -257,9 +301,20 @@ export default function FinalResultsPage() {
     }
   }
 
-  function handleTieResolve(resolved: Map<number, number>) {
+  async function handleTieResolve(resolved: Map<number, number>) {
     setResolvedRanks(resolved);
     setShowTieModal(false);
+
+    if (!eventId) return;
+    try {
+      const payload = Array.from(resolved.entries()).map(([team_id, final_rank]) => ({
+        team_id,
+        final_rank,
+      }));
+      await saveFinalStandings(eventId, payload);
+    } catch (e) {
+      alert("順位の保存に失敗しました: " + (e instanceof Error ? e.message : "不明なエラー"));
+    }
   }
 
   // 最終的な順位を取得（resolvedRanks で上書き）
@@ -361,7 +416,7 @@ export default function FinalResultsPage() {
         <TieResolveModal
           tieGroups={tieGroups}
           onResolve={handleTieResolve}
-          onSkip={() => setShowTieModal(false)}
+          onCancel={() => setShowTieModal(false)}
         />
       )}
 
@@ -383,7 +438,7 @@ export default function FinalResultsPage() {
                 タイ解消済み
               </Badge>
             )}
-            {tieGroups.length > 0 && resolvedRanks.size === 0 && (
+            {tieGroups.length > 0 && (
               <Button
                 variant="outlined"
                 size="sm"

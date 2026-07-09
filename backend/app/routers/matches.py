@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
 
-from app.models.matches import MatchListItem, MatchDetail, MatchResultSave, StandingsEntry, MatchSummary
+from app.models.matches import MatchListItem, MatchDetail, MatchResultSave, StandingsEntry, MatchSummary, FinalRankUpdate
 from app.core.db import (
     get_all_matches,
     get_match_by_id,
@@ -11,6 +11,7 @@ from app.core.db import (
     get_main_round_standings,
     get_all_standings,
     get_event_match_summary,
+    save_final_ranks,
 )
 
 router = APIRouter(prefix="/api/events/{event_id}", tags=["matches"])
@@ -92,5 +93,16 @@ async def get_match_summary(event_id: int):
     """試合のサマリー（総数・確定済み）を返す。"""
     try:
         return await get_event_match_summary(event_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/final-standings")
+async def update_final_standings(event_id: int, data: List[FinalRankUpdate]):
+    """大会最終順位（手動タイ解消結果など）をDBに保存・永続化する。"""
+    try:
+        ranks_dict = [d.dict() for d in data]
+        await save_final_ranks(event_id, ranks_dict)
+        return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

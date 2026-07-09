@@ -155,6 +155,7 @@ export interface StandingsEntry {
   total_comm: number;
   total_manner: number;
   rank: number;
+  final_rank?: number | null;
 }
 
 export interface MatchSummary {
@@ -191,4 +192,14 @@ export async function fetchStandings(eventId: number, round?: string): Promise<S
 
 export async function fetchMatchSummary(eventId: number): Promise<MatchSummary> {
   return apiFetch(`/api/events/${eventId}/match-summary`);
+}
+
+export async function saveFinalStandings(
+  eventId: number,
+  ranks: { team_id: number; final_rank: number | null }[]
+): Promise<{ status: string }> {
+  return apiFetch(`/api/events/${eventId}/final-standings`, {
+    method: "PUT",
+    body: JSON.stringify(ranks),
+  });
 }

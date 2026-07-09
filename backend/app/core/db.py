@@ -70,6 +70,7 @@ from .handle_db.teams import (
     create_team,
     update_team,
     delete_team,
+    save_final_ranks,
 )
 
 from .handle_db.staffs import (
