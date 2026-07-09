@@ -317,6 +317,23 @@ export default function FinalResultsPage() {
     }
   }
 
+  async function handleResetFinalRanks() {
+    if (!eventId) return;
+    if (!confirm("手動で解消した順位設定をすべてリセット（タイの状態に戻す）してもよろしいですか？")) {
+      return;
+    }
+    try {
+      setLoading(true);
+      await saveFinalStandings(eventId, []);
+      setResolvedRanks(new Map());
+      await load();
+    } catch (e) {
+      alert("リセットに失敗しました: " + (e instanceof Error ? e.message : "不明なエラー"));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   // 最終的な順位を取得（resolvedRanks で上書き）
   function getEffectiveRank(entry: StandingsEntry): number {
     return resolvedRanks.get(entry.team_id) ?? entry.rank;
@@ -433,10 +450,21 @@ export default function FinalResultsPage() {
           </div>
           <div className="flex gap-2 flex-wrap">
             {resolvedRanks.size > 0 && (
-              <Badge variant="success" className="text-xs px-3 py-1.5 font-medium">
-                <Icon name="check_circle" size={14} className="mr-1" />
-                タイ解消済み
-              </Badge>
+              <div className="flex items-center gap-1.5">
+                <Badge variant="success" className="text-xs px-3 py-1.5 font-medium">
+                  <Icon name="check_circle" size={14} className="mr-1" />
+                  タイ解消済み
+                </Badge>
+                <Button
+                  variant="outlined"
+                  size="sm"
+                  icon="restart_alt"
+                  onClick={handleResetFinalRanks}
+                  className="text-destructive hover:bg-destructive/5 border-destructive/30 hover:border-destructive/50"
+                >
+                  タイ解消をリセット
+                </Button>
+              </div>
             )}
             {tieGroups.length > 0 && (
               <Button
