@@ -142,7 +142,9 @@ export default function StandingsPage() {
     const a = document.createElement("a");
     a.href = url;
     a.download = `standings_${eventId}.csv`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 

@@ -339,6 +339,29 @@ export default function FinalResultsPage() {
     return resolvedRanks.get(entry.team_id) ?? entry.rank;
   }
 
+  // FileSaver.js 互換のダウンロードヘルパー
+  // dispatchEvent + 長めのURL保持で Chrome の download 属性無視を回避
+  function downloadBlob(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.rel = "noopener";
+    a.style.display = "none";
+    document.body.appendChild(a);
+    // dispatchEvent の方が .click() より信頼性が高い
+    try {
+      a.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+    } catch {
+      a.click();
+    }
+    // 40秒間 URL を保持（FileSaver.js と同じ戦略）
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 40000);
+  }
+
   // エクスポート処理
   async function handleExport(format: "png" | "jpeg" | "pdf") {
     const root = document.getElementById("match-result-export-root");
@@ -357,14 +380,23 @@ export default function FinalResultsPage() {
           format: [canvas.width / 2, canvas.height / 2],
         });
         pdf.addImage(imgData, "JPEG", 0, 0, canvas.width / 2, canvas.height / 2);
-        pdf.save(`match-results-${eventId}.pdf`);
+        const blob = pdf.output("blob");
+        downloadBlob(blob, `match-results-${eventId}.pdf`);
       } else {
         const mimeType = format === "jpeg" ? "image/jpeg" : "image/png";
         const ext = format;
-        const link = document.createElement("a");
-        link.download = `match-results-${eventId}.${ext}`;
-        link.href = canvas.toDataURL(mimeType, 0.95);
-        link.click();
+        const filename = `match-results-${eventId}.${ext}`;
+        await new Promise<void>((resolve, reject) => {
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) { reject(new Error("toBlob が失敗しました")); return; }
+              downloadBlob(blob, filename);
+              resolve();
+            },
+            mimeType,
+            0.95
+          );
+        });
       }
     } catch (e) {
       alert("エクスポートに失敗しました: " + (e instanceof Error ? e.message : "不明なエラー"));
@@ -389,10 +421,7 @@ export default function FinalResultsPage() {
     ];
     const csv = rows.map((r) => r.join(",")).join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `final-results-${eventId}.csv`;
-    a.click();
+    downloadBlob(blob, `final-results-${eventId}.csv`);
   };
 
   if (!eventId || isNaN(eventId)) {
