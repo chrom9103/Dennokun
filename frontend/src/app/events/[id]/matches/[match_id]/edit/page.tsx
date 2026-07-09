@@ -146,6 +146,9 @@ export default function MatchEditPage() {
       setIsConfirmed(confirm);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
+      if (confirm) {
+        router.push(`/events/${eventId}/matches/board`);
+      }
     } catch (e) {
       alert(e instanceof Error ? e.message : "保存に失敗しました");
     } finally {

@@ -19,6 +19,7 @@ async def get_pre_round_standings(event_id: int) -> List[dict]:
                     m.aff_team_id AS team_id,
                     CASE WHEN m.aff_won = 1 THEN 1 ELSE 0 END AS win,
                     CASE WHEN m.neg_won = 1 THEN 1 ELSE 0 END AS loss,
+                    COALESCE(m.aff_votes, 0) AS votes,
                     COALESCE(m.aff_comm_sum, 0) AS comm_sum,
                     COALESCE(m.aff_manner, 0) AS manner
                 FROM event_matches m
@@ -33,6 +34,7 @@ async def get_pre_round_standings(event_id: int) -> List[dict]:
                     m.neg_team_id AS team_id,
                     CASE WHEN m.neg_won = 1 THEN 1 ELSE 0 END AS win,
                     CASE WHEN m.aff_won = 1 THEN 1 ELSE 0 END AS loss,
+                    COALESCE(m.neg_votes, 0) AS votes,
                     COALESCE(m.neg_comm_sum, 0) AS comm_sum,
                     COALESCE(m.neg_manner, 0) AS manner
                 FROM event_matches m
@@ -47,6 +49,7 @@ async def get_pre_round_standings(event_id: int) -> List[dict]:
                     mr.team_id,
                     SUM(mr.win) AS wins,
                     SUM(mr.loss) AS losses,
+                    SUM(mr.votes) AS total_votes,
                     SUM(mr.comm_sum) AS total_comm,
                     SUM(mr.manner) AS total_manner,
                     COUNT(*) AS matches_played
@@ -62,11 +65,12 @@ async def get_pre_round_standings(event_id: int) -> List[dict]:
                 ts.wins,
                 ts.losses,
                 ts.matches_played,
+                ts.total_votes,
                 ts.total_comm,
                 ts.total_manner,
                 RANK() OVER (
                     PARTITION BY ts.event_section_id
-                    ORDER BY ts.wins DESC, ts.total_comm DESC, ts.total_manner DESC
+                    ORDER BY ts.wins DESC, ts.total_votes DESC, ts.total_comm DESC
                 ) AS rank
             FROM team_stats ts
             JOIN event_teams t ON t.id = ts.team_id AND t.deleted_at IS NULL
