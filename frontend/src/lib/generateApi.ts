@@ -33,6 +33,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 export interface GenerateMatchesRequest {
   section_segment_parallel_matches: Record<string, number>;
   overwrite?: boolean;
+  as_skeleton?: boolean;
 }
 
 export interface GenerateMatchesResponse {

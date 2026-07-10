@@ -10,6 +10,7 @@ class GenerateMatchesRequest(BaseModel):
     # key: "{section_id}_{segment_id}", value: 並行試合数
     section_segment_parallel_matches: dict[str, int]
     overwrite: bool = False                    # 既存試合を削除してから生成するか
+    as_skeleton: bool = False                  # 空の枠組み（スケルトン）として生成するか
 
 
 # ── Generation response ────────────────────────────────────────────────────────

@@ -41,6 +41,7 @@ def generate_matches_by_slots(
     rooms: list[dict],
     section_segment_parallel_matches: dict[str, int],
     confirmed_matches: list[dict] = None,
+    as_skeleton: bool = False,
 ) -> tuple[list[dict], list[str]]:
     """
     各部門の各時間枠の並行試合数設定に基づいて、チームを対戦ペアに割り振り、会場スロットを割り当てる。
@@ -166,6 +167,19 @@ def generate_matches_by_slots(
 
                 room = used_rooms[room_idx]
 
+                if as_skeleton:
+                    generated_matches.append({
+                        "event_timetable_segment_id": seg_id,
+                        "event_room_id": room["id"],
+                        "event_section_id": sec_id,
+                        "aff_team_id": None,
+                        "neg_team_id": None,
+                        "order_number_in_segment": order_in_seg,
+                    })
+                    room_idx += 1
+                    order_in_seg += 1
+                    continue
+
                 # この部門内で最も適切なペアを探索
                 best_pair = _find_best_pair(
                     sec_id=sec_id,
@@ -233,13 +247,14 @@ def generate_matches_by_slots(
                 order_in_seg += 1
 
     # ① 試合数の平準化チェックと警告
-    _check_match_count_balance(
-        teams=teams,
-        team_match_count=team_match_count,
-        confirmed_matches=confirmed_matches,
-        generated_matches=generated_matches,
-        warnings=warnings,
-    )
+    if not as_skeleton:
+        _check_match_count_balance(
+            teams=teams,
+            team_match_count=team_match_count,
+            confirmed_matches=confirmed_matches,
+            generated_matches=generated_matches,
+            warnings=warnings,
+        )
 
     return generated_matches, warnings
 
@@ -286,19 +301,31 @@ def _find_best_pair(
     指定された部門内で最も適切な対戦ペアを1組探し、(team_a, team_b) で返す。
 
     スコアリング基準（低いほど良い）:
-      - 試合数が多いチームは避ける（① 平準化）
-      - 同一校対戦は避ける
+      - 試合数が多いチームは避ける（① 平準化 - 最優先）
+      - 同一校対戦は避ける（絶対条件）
       - 過去の対戦履歴がある対戦は避ける
-      - ③ シード同士の偏りを避ける（seed_vs_seed と seed_vs_non の差が大きいペアは避ける）
+      - ③ シード同士の偏りを避ける（優先度低）
     """
     if len(available_teams) < 2:
         return None
 
-    best_pair: tuple[dict, dict] | None = None
-    best_score = float("inf")
+    # 利用可能チームの中での最小試合数を特定
+    min_avail_match_count = min(team_match_count[t["id"]] for t in available_teams)
 
-    # チームを累計対戦数でソート（少ない順）して探索
-    sorted_avail = sorted(available_teams, key=lambda t: team_match_count[t["id"]])
+    # 試合数が同じチーム同士をグループ化して、それぞれシャッフルすることで乱数を導入
+    match_count_groups: dict[int, list[dict]] = {}
+    for t in available_teams:
+        c = team_match_count[t["id"]]
+        match_count_groups.setdefault(c, []).append(t)
+
+    sorted_avail = []
+    for c in sorted(match_count_groups.keys()):
+        group = match_count_groups[c]
+        random.shuffle(group) # 同一試合数内をランダムシャッフル
+        sorted_avail.extend(group)
+
+    best_pairs: list[tuple[dict, dict]] = []
+    best_score = float("inf")
 
     for i, t_a in enumerate(sorted_avail):
         for t_b in sorted_avail[i + 1:]:
@@ -309,13 +336,20 @@ def _find_best_pair(
                 seed_vs_seed_count=seed_vs_seed_count,
                 seed_vs_non_count=seed_vs_non_count,
                 team_is_seed=team_is_seed,
+                min_avail_match_count=min_avail_match_count,
             )
 
             if score < best_score:
                 best_score = score
-                best_pair = (t_a, t_b)
+                best_pairs = [(t_a, t_b)]
+            elif score == best_score:
+                best_pairs.append((t_a, t_b))
 
-    return best_pair
+    if not best_pairs:
+        return None
+
+    # 同率最小スコアのペアが複数ある場合、ランダムに選択（決定論的な挙動の回避）
+    return random.choice(best_pairs)
 
 
 def _compute_pair_score(
@@ -326,45 +360,46 @@ def _compute_pair_score(
     seed_vs_seed_count: dict[int, int],
     seed_vs_non_count: dict[int, int],
     team_is_seed: dict[int, bool],
+    min_avail_match_count: int,
 ) -> float:
     """ペアのスコアを計算する（低いほど良い）。"""
-    score = float(team_match_count[t_a["id"]] + team_match_count[t_b["id"]])
+    # 試合数の平準化 (最優先): 最小試合数からの乖離を大きくペナルティ化
+    diff_a = team_match_count[t_a["id"]] - min_avail_match_count
+    diff_b = team_match_count[t_b["id"]] - min_avail_match_count
+    score = float((diff_a + diff_b) * 5000)
 
-    # 同一校対戦は最悪
+    # 同一校対戦は最悪（絶対回避条件）
     is_same_school = (
         t_a.get("event_school_id") is not None
         and t_a.get("event_school_id") == t_b.get("event_school_id")
     )
     if is_same_school:
-        score += 10000
+        score += 100000
 
     # 過去対戦済みは大きなペナルティ
     if (t_a["id"], t_b["id"]) in played_pairs:
         score += 1000
 
-    # ③ シード校配置バランス
+    # ③ シード校配置バランス（優先度低: 試合数平準化や過去対戦防止を妨げない強さにする）
     a_seed = team_is_seed.get(t_a["id"], False)
     b_seed = team_is_seed.get(t_b["id"], False)
 
     if a_seed and b_seed:
-        # 両方シード: このペアを組むと「シード同士」カウントが増える
-        # t_a の seed_vs_seed と seed_vs_non の差を評価
+        # 両方シード
         for seed_id in [t_a["id"], t_b["id"]]:
             svs = seed_vs_seed_count.get(seed_id, 0)
             svn = seed_vs_non_count.get(seed_id, 0)
-            # 既にシード同士が多い場合はペナルティ
             diff_after = (svs + 1) - svn
             if diff_after > 1:
-                score += 500 * diff_after
+                score += 10 * diff_after
 
     elif a_seed and not b_seed:
         # t_a はシード、t_b は非シード
         svs = seed_vs_seed_count.get(t_a["id"], 0)
         svn = seed_vs_non_count.get(t_a["id"], 0)
-        # 既にシード vs 非シードが多い場合はペナルティ
         diff_after = (svn + 1) - svs
         if diff_after > 1:
-            score += 300 * diff_after
+            score += 5 * diff_after
 
     elif not a_seed and b_seed:
         # t_b はシード、t_a は非シード
@@ -372,7 +407,7 @@ def _compute_pair_score(
         svn = seed_vs_non_count.get(t_b["id"], 0)
         diff_after = (svn + 1) - svs
         if diff_after > 1:
-            score += 300 * diff_after
+            score += 5 * diff_after
 
     return score
 

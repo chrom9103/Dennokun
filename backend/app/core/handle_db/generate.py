@@ -191,15 +191,20 @@ async def lock_segment_staffs(event_id: int, segment_id: int, is_fixed: bool) ->
         await conn.close()
 
 
-async def delete_unconfirmed_matches(event_id: int) -> int:
-    """大会の確定していない試合（is_staffs_fixed = False）を論理削除する。"""
+async def delete_unconfirmed_pre_round_matches(event_id: int) -> int:
+    """大会の確定していない予選試合（is_staffs_fixed = False かつ 予選セグメント）を論理削除する。"""
     from app.core.db import get_db_connection
     conn = await get_db_connection()
     try:
         result = await conn.execute(
             """UPDATE event_matches
                SET deleted_at = NOW(), updated_at = NOW()
-               WHERE event_id = $1 AND is_staffs_fixed = FALSE AND deleted_at IS NULL""",
+               FROM event_timetable_segments ets
+               WHERE event_matches.event_timetable_segment_id = ets.id
+                 AND event_matches.event_id = $1
+                 AND event_matches.is_staffs_fixed = FALSE
+                 AND ets.is_pre_round = TRUE
+                 AND event_matches.deleted_at IS NULL""",
             event_id,
         )
         try:

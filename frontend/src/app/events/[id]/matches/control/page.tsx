@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Card, CardHeader, CardContent } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
@@ -233,17 +233,86 @@ export default function ControlPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
-  // Filter matches
-  const filteredMatches = matches.filter((m) => {
-    const matchSeg = fSegment === "all" || String(m.event_timetable_segment_id) === fSegment;
-    const matchSec = fSection === "all" || String(m.event_section_id) === fSection;
-    return matchSeg && matchSec;
-  });
+  // データベースからの実際の試合に、パラメータ設定による「仮の空枠」をマージした表示用のリストを作成
+  const displayMatches = useMemo(() => {
+    let virtualIdCounter = -1;
+    const sortedRooms = [...rooms].sort((a, b) => (a.order_number ?? 0) - (b.order_number ?? a.id));
+    const result: MatchListItem[] = [];
 
-  async function handleGenerate() {
+    segments.forEach((seg) => {
+      // このセグメントに属する実際の試合
+      const actualSegMatches = matches.filter((m) => m.event_timetable_segment_id === seg.id);
+
+      // 部門ごとに処理
+      sections.forEach((sec) => {
+        // このセグメント・部門の実際の試合
+        const actualSecMatches = actualSegMatches.filter((m) => m.event_section_id === sec.id);
+
+        // パラメータでの設定値
+        const key = `${sec.id}_${seg.id}`;
+        const targetCount = parallelMatches[key] ?? 0;
+
+        // 実際の試合を結果に追加
+        result.push(...actualSecMatches);
+
+        // 不足分があれば仮想（空）の試合を追加
+        const missingCount = targetCount - actualSecMatches.length;
+        if (missingCount > 0) {
+          // すでに使われている部屋IDのセット
+          const usedRoomIds = new Set(actualSegMatches.map(m => m.event_room_id).filter(id => id != null));
+          // 空いている部屋を探す
+          const availableRooms = sortedRooms.filter(r => !usedRoomIds.has(r.id));
+
+          for (let i = 0; i < missingCount; i++) {
+            const room = availableRooms[i] || null;
+            result.push({
+              id: virtualIdCounter--,
+              event_id: eventId ?? 0,
+              event_timetable_segment_id: seg.id,
+              event_room_id: room ? room.id : null,
+              event_section_id: sec.id,
+              aff_team_id: null,
+              neg_team_id: null,
+              main_judge_staff_id: null,
+              sub_judge1_staff_id: null,
+              sub_judge2_staff_id: null,
+              sub_judge3_staff_id: null,
+              sub_judge4_staff_id: null,
+              timekeeper_staff_id: null,
+              judges_assignment_count: segmentJudgeCounts[seg.id] ?? 3,
+              order_number_in_segment: actualSegMatches.length + i + 1,
+              is_staffs_fixed: false,
+              is_result_confirmed: false,
+              timetable_segment_name: seg.name,
+              room_name: room ? room.name : undefined,
+              section_name: sec.name,
+              // カスタムプロパティ（バーチャル判定用）
+              is_virtual: true,
+            } as any);
+          }
+        }
+      });
+    });
+
+    return result;
+  }, [matches, parallelMatches, rooms, sections, segments, eventId, segmentJudgeCounts]);
+
+  // Filter display matches
+  const filteredDisplayMatches = useMemo(() => {
+    return displayMatches.filter((m) => {
+      const matchSeg = fSegment === "all" || String(m.event_timetable_segment_id) === fSegment;
+      const matchSec = fSection === "all" || String(m.event_section_id) === fSection;
+      return matchSeg && matchSec;
+    });
+  }, [displayMatches, fSegment, fSection]);
+
+  async function handleGenerate(asSkeleton: boolean = false) {
     if (!eventId) return;
     if (matches.length > 0) {
-      if (!confirm("確定されていない試合を削除して再生成します。よろしいですか？")) return;
+      const msg = asSkeleton
+        ? "確定されていない試合を削除し、出場校やスタッフが空の「空の枠組み」を生成します。よろしいですか？"
+        : "確定されていない試合を削除して再生成します。よろしいですか？";
+      if (!confirm(msg)) return;
     }
     setGenerating(true);
     setGenResult(null);
@@ -253,6 +322,7 @@ export default function ControlPage() {
       const req: GenerateMatchesRequest = {
         section_segment_parallel_matches: parallelMatches,
         overwrite: false,
+        as_skeleton: asSkeleton,
       };
       const result = await generateMatches(eventId, req);
       setGenResult({ generated_count: result.generated_count, warnings: result.warnings });
@@ -700,7 +770,7 @@ export default function ControlPage() {
                     match.timekeeper_staff_id;
 
     const staff = staffs.find((s) => s.id === staffId);
-    const isLocked = match.is_staffs_fixed;
+    const isLocked = match.is_staffs_fixed || match.id < 0;
 
     let chipClass = "border-dashed border-border/80 bg-transparent text-muted-foreground/60 font-normal";
     let isDuplicate = false;
@@ -1085,11 +1155,11 @@ export default function ControlPage() {
               </div>
 
               {/* Action Buttons Row */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <Button
                     className="w-full font-semibold"
-                    onClick={handleGenerate}
+                    onClick={() => handleGenerate(false)}
                     loading={generating}
                     disabled={teams.length < 2}
                   >
@@ -1101,6 +1171,21 @@ export default function ControlPage() {
                       チームを2チーム以上登録すると生成できます
                     </p>
                   )}
+                </div>
+
+                <div>
+                  <Button
+                    className="w-full font-semibold"
+                    variant="outlined"
+                    onClick={() => handleGenerate(true)}
+                    loading={generating}
+                  >
+                    <Icon name="restart_alt" size={18} />
+                    <span className="ml-2">{generating ? "リセット中..." : "組み合わせをリセット"}</span>
+                  </Button>
+                  <p className="text-xs text-center text-muted-foreground mt-1">
+                    出場校・スタッフが空の枠組みのみを生成
+                  </p>
                 </div>
                 
                 <div>
@@ -1159,7 +1244,7 @@ export default function ControlPage() {
               </span>
             </CardContent>
           </Card>
-        ) : filteredMatches.length === 0 ? (
+        ) : filteredDisplayMatches.length === 0 ? (
           <Card>
             <CardContent className="py-20 text-center text-muted-foreground">
               <div className="flex flex-col items-center gap-2">
@@ -1172,7 +1257,7 @@ export default function ControlPage() {
         ) : (
           segments
             .map((seg) => {
-              const segMatches = filteredMatches.filter((m) => m.event_timetable_segment_id === seg.id);
+              const segMatches = filteredDisplayMatches.filter((m) => m.event_timetable_segment_id === seg.id);
               return { seg, matches: segMatches };
             })
             .filter((item) => item.matches.length > 0)
@@ -1239,12 +1324,13 @@ export default function ControlPage() {
                         <Icon name="person_off" size={14} />
                         未割当スタッフ
                       </button>
-                      <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold select-none text-muted-foreground hover:text-foreground">
+                      <label className={`flex items-center gap-1.5 text-xs font-semibold select-none text-muted-foreground ${segMatches.some(m => m.id < 0) ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:text-foreground'}`}>
                         <input
                           type="checkbox"
                           checked={segMatches.length > 0 && segMatches.every((m) => m.is_staffs_fixed)}
+                          disabled={segMatches.some(m => m.id < 0)}
                           onChange={(e) => handleToggleSegmentLock(seg.id, e.target.checked)}
-                          className="w-3.5 h-3.5 rounded accent-primary cursor-pointer"
+                          className="w-3.5 h-3.5 rounded accent-primary cursor-pointer disabled:cursor-not-allowed"
                         />
                         <span>配置を確定する</span>
                       </label>
@@ -1366,7 +1452,7 @@ export default function ControlPage() {
                                     size="sm"
                                     className="p-1.5 h-auto rounded-full text-primary hover:bg-primary/5 active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
                                     onClick={() => openEdit(m)}
-                                    disabled={m.is_staffs_fixed}
+                                    disabled={m.is_staffs_fixed || m.id < 0}
                                   >
                                     <Icon name="tune" size={18} />
                                   </Button>
@@ -1428,7 +1514,7 @@ export default function ControlPage() {
                                     size="sm"
                                     className="p-1.5 h-auto rounded-full text-primary hover:bg-primary/5 active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
                                     onClick={() => openEdit(m)}
-                                    disabled={m.is_staffs_fixed}
+                                    disabled={m.is_staffs_fixed || m.id < 0}
                                   >
                                     <Icon name="tune" size={18} />
                                   </Button>

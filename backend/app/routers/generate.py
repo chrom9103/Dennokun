@@ -69,7 +69,7 @@ async def generate_matches(event_id: int, req: GenerateMatchesRequest):
         from app.core.handle_db.rooms import get_all_rooms
         from app.core.handle_db.generate import (
             bulk_insert_matches,
-            delete_unconfirmed_matches,
+            delete_unconfirmed_pre_round_matches,
         )
         from app.core.handle_db.matches import get_all_matches
         from app.algorithm.match_generator import generate_matches_by_slots
@@ -78,6 +78,9 @@ async def generate_matches(event_id: int, req: GenerateMatchesRequest):
         teams = await get_all_teams(event_id)
         segments = await get_all_timetable_segments(event_id)
         rooms = await get_all_rooms(event_id)
+
+        # 予選のセグメントのみにフィルタ
+        pre_round_segments = [s for s in segments if s.get("is_pre_round")]
 
         # 既存の試合データを取得して、確定済み試合を抽出
         existing_matches = await get_all_matches(event_id)
@@ -89,16 +92,17 @@ async def generate_matches(event_id: int, req: GenerateMatchesRequest):
                 detail="チームが登録されていません。先にチームを登録してください。"
             )
 
-        # 2. 確定していない既存試合のみ削除
-        deleted_count = await delete_unconfirmed_matches(event_id)
+        # 2. 確定していない既存の予選試合のみ削除
+        deleted_count = await delete_unconfirmed_pre_round_matches(event_id)
 
         # 3. 対戦・スロット割当の同時生成 (確定済み試合を引数に渡す)
         pairs, warnings = generate_matches_by_slots(
             teams=teams,
-            segments=segments,
+            segments=pre_round_segments,
             rooms=rooms,
             section_segment_parallel_matches=req.section_segment_parallel_matches,
             confirmed_matches=confirmed_matches,
+            as_skeleton=req.as_skeleton,
         )
 
         if not pairs:
