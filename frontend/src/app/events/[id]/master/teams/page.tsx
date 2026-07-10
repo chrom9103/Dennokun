@@ -91,6 +91,11 @@ export default function TeamsPage() {
   useEffect(() => { load(); }, [load]);
 
   const filteredSchoolsForModal = useMemo(() => {
+    // 現在編集中のチームに設定されている学校は必ず選択肢に含める（編集時の誤フィルタリング防止）
+    const currentSchool = form.event_school_id
+      ? schools.find((s) => String(s.id) === form.event_school_id)
+      : null;
+
     if (!form.event_section_id) return schools;
     const selectedSection = sections.find((s) => String(s.id) === form.event_section_id);
     if (!selectedSection) return schools;
@@ -102,6 +107,9 @@ export default function TeamsPage() {
     const isUniversity = sectionName.includes("大学");
 
     const filtered = schools.filter((s) => {
+      // 現在設定されている学校は必ず含める
+      if (currentSchool && s.id === currentSchool.id) return true;
+
       // 1. Keyword match
       if (isHighSchool && (s.name.includes("高校") || s.name.includes("高等学校") || s.name_aliases?.some(a => a.includes("高校") || a.includes("高等学校")))) return true;
       if (isJuniorHigh && (s.name.includes("中学") || s.name.includes("中学校") || s.name_aliases?.some(a => a.includes("中学") || a.includes("中学校")))) return true;
@@ -121,7 +129,7 @@ export default function TeamsPage() {
     }
 
     return filtered;
-  }, [form.event_section_id, schools, sections, teams]);
+  }, [form.event_section_id, form.event_school_id, schools, sections, teams]);
 
   const handleSectionChange = (sectionId: string) => {
     setForm((f) => {
