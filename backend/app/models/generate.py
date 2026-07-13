@@ -7,8 +7,10 @@ from pydantic import BaseModel
 
 class GenerateMatchesRequest(BaseModel):
     """試合生成リクエスト。"""
-    segment_parallel_matches: dict[int, int]  # key: segment_id, value: 並行試合数
+    # key: "{section_id}_{segment_id}", value: 並行試合数
+    section_segment_parallel_matches: dict[str, int]
     overwrite: bool = False                    # 既存試合を削除してから生成するか
+    as_skeleton: bool = False                  # 空の枠組み（スケルトン）として生成するか
 
 
 # ── Generation response ────────────────────────────────────────────────────────
@@ -37,6 +39,12 @@ class MatchAssignmentUpdate(BaseModel):
     timekeeper_staff_id: Optional[int] = None
     event_section_id: Optional[int] = None
     order_number_in_segment: Optional[int] = None
+    is_staffs_fixed: Optional[bool] = None
+
+
+class LockSegmentStaffsRequest(BaseModel):
+    """時間枠の試合の配置・割当を確定（または解除）するリクエスト。"""
+    is_fixed: bool
 
 
 # ── Dashboard summary ──────────────────────────────────────────────────────────
@@ -55,4 +63,6 @@ class DashboardSummary(BaseModel):
 class AssignJudgesRequest(BaseModel):
     """審判割り当てリクエスト。"""
     segment_judge_counts: dict[int, int]  # key: segment_id, value: 各枠の1試合あたりのジャッジ数
+    allow_reversed_past: bool = False     # 肯否逆であれば過去に見た学校であっても割り当てを許可するか
+    allow_same_group_diff_team: bool = False # 同じグループ（学校）に属していても別チームであれば割り当てを許可するか
 

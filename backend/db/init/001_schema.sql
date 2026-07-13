@@ -82,7 +82,8 @@ CREATE TABLE IF NOT EXISTS event_teams (
     note TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at TIMESTAMPTZ
+    deleted_at TIMESTAMPTZ,
+    final_rank INTEGER DEFAULT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_event_teams_event_id ON event_teams (event_id);

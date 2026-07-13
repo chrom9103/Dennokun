@@ -47,6 +47,7 @@ export interface MatchListItem {
   aff_won: number | null;
   neg_won: number | null;
   is_result_confirmed: boolean;
+  is_staffs_fixed: boolean;
   judges_assignment_count: number | null;
   order_number_in_segment: number | null;
   note: string | null;
@@ -62,6 +63,8 @@ export interface MatchListItem {
   main_judge_staff_id: number | null;
   sub_judge1_staff_id: number | null;
   sub_judge2_staff_id: number | null;
+  sub_judge3_staff_id: number | null;
+  sub_judge4_staff_id: number | null;
   timekeeper_staff_id: number | null;
   neg_team_name: string | null;
   timekeeper_name: string | null;
@@ -110,10 +113,14 @@ export interface MatchDetail extends MatchListItem {
   main_judge_staff_id: number | null;
   sub_judge1_staff_id: number | null;
   sub_judge2_staff_id: number | null;
+  sub_judge3_staff_id: number | null;
+  sub_judge4_staff_id: number | null;
   timekeeper_staff_id: number | null;
   main_judge_name: string | null;
   sub_judge1_name: string | null;
   sub_judge2_name: string | null;
+  sub_judge3_name: string | null;
+  sub_judge4_name: string | null;
   timekeeper_name: string | null;
   start_time: string | null;
   end_time: string | null;
@@ -144,9 +151,11 @@ export interface StandingsEntry {
   wins: number;
   losses: number;
   matches_played: number;
+  total_votes: number;
   total_comm: number;
   total_manner: number;
   rank: number;
+  final_rank?: number | null;
 }
 
 export interface MatchSummary {
@@ -176,10 +185,21 @@ export async function saveMatchResult(
   });
 }
 
-export async function fetchStandings(eventId: number): Promise<StandingsEntry[]> {
-  return apiFetch(`/api/events/${eventId}/standings`);
+export async function fetchStandings(eventId: number, round?: string): Promise<StandingsEntry[]> {
+  const query = round ? `?round=${round}` : "";
+  return apiFetch(`/api/events/${eventId}/standings${query}`);
 }
 
 export async function fetchMatchSummary(eventId: number): Promise<MatchSummary> {
   return apiFetch(`/api/events/${eventId}/match-summary`);
+}
+
+export async function saveFinalStandings(
+  eventId: number,
+  ranks: { team_id: number; final_rank: number | null }[]
+): Promise<{ status: string }> {
+  return apiFetch(`/api/events/${eventId}/final-standings`, {
+    method: "PUT",
+    body: JSON.stringify(ranks),
+  });
 }

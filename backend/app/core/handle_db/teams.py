@@ -87,7 +87,7 @@ async def update_team(team_id: int, **kwargs) -> Optional[dict]:
     conn = await get_db_connection()
     try:
         allowed = {"name", "event_section_id", "event_school_id", "team_group_id",
-                   "is_seed", "order_of_application", "note"}
+                   "is_seed", "order_of_application", "note", "final_rank"}
         fields = {k: v for k, v in kwargs.items() if k in allowed}
 
         if not fields:
@@ -101,6 +101,24 @@ async def update_team(team_id: int, **kwargs) -> Optional[dict]:
             *values,
         )
         return await get_team_by_id(team_id)
+    finally:
+        await conn.close()
+
+
+async def save_final_ranks(event_id: int, ranks: List[dict]) -> None:
+    """イベント内のチームの最終順位をバルク更新する。"""
+    from app.core.db import get_db_connection
+    conn = await get_db_connection()
+    try:
+        async with conn.transaction():
+            # 一旦、該当イベントの全チームの final_rank を NULL にクリア
+            await conn.execute("UPDATE event_teams SET final_rank = NULL WHERE event_id = $1", event_id)
+            # 送信された順位を適用
+            for r in ranks:
+                await conn.execute(
+                    "UPDATE event_teams SET final_rank = $1, updated_at = NOW() WHERE id = $2 AND event_id = $3 AND deleted_at IS NULL",
+                    r["final_rank"], r["team_id"], event_id
+                )
     finally:
         await conn.close()
 

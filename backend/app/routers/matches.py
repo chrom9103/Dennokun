@@ -1,14 +1,17 @@
 """Matches and standings router."""
-from fastapi import APIRouter, HTTPException
-from typing import List
+from fastapi import APIRouter, HTTPException, Query
+from typing import List, Optional
 
-from app.models.matches import MatchListItem, MatchDetail, MatchResultSave, StandingsEntry, MatchSummary
+from app.models.matches import MatchListItem, MatchDetail, MatchResultSave, StandingsEntry, MatchSummary, FinalRankUpdate
 from app.core.db import (
     get_all_matches,
     get_match_by_id,
     save_match_result,
     get_pre_round_standings,
+    get_main_round_standings,
+    get_all_standings,
     get_event_match_summary,
+    save_final_ranks,
 )
 
 router = APIRouter(prefix="/api/events/{event_id}", tags=["matches"])
@@ -63,10 +66,24 @@ async def save_result(event_id: int, match_id: int, data: MatchResultSave):
 
 
 @router.get("/standings", response_model=List[StandingsEntry])
-async def get_standings(event_id: int):
-    """部門別の予選順位集計を返す。"""
+async def get_standings(
+    event_id: int,
+    round: Optional[str] = Query(default="pre", description="集計対象: pre=予選, main=本戦, all=全試合"),
+):
+    """
+    部門別の順位集計を返す。
+    - round=pre  : 予選（is_pre_round=TRUE）のみ集計（デフォルト）
+    - round=main : 本戦（is_pre_round=FALSE）のみ集計
+    - round=all  : 予選・本戦すべてを集計
+    """
     try:
-        return await get_pre_round_standings(event_id)
+        if round == "main":
+            return await get_main_round_standings(event_id)
+        elif round == "all":
+            return await get_all_standings(event_id)
+        else:
+            # デフォルト: 予選のみ
+            return await get_pre_round_standings(event_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -76,5 +93,16 @@ async def get_match_summary(event_id: int):
     """試合のサマリー（総数・確定済み）を返す。"""
     try:
         return await get_event_match_summary(event_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/final-standings")
+async def update_final_standings(event_id: int, data: List[FinalRankUpdate]):
+    """大会最終順位（手動タイ解消結果など）をDBに保存・永続化する。"""
+    try:
+        ranks_dict = [d.dict() for d in data]
+        await save_final_ranks(event_id, ranks_dict)
+        return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

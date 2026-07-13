@@ -1,21 +1,25 @@
 """
-match_generator.py — スロットベース対戦カード生成ロジック
+match_generator.py — スロットベース対戦カード生成ロジック（改良版）
 =========================================================
 
-【現在の実装】
-  時間枠ごとに設定された「並行試合数」に応じて、
-  登録されたチームから均等に対戦ペアを組んで会場スロットに割り当てる。
+【改良内容】
+  ① 試合数の平準化
+     各チームの累計試合数が均等（最大差1試合以内）になるようペア選択を制御する。
+     均等にできない場合は警告を出力する。
 
-【将来の最適化について】
-  このファイルだけ差し替えれば、より高度な最適化（遺伝的アルゴリズム、
-  線形計画法など）に移行できるよう設計している。
-  generate_matches_by_slots() の入出力インターフェースを維持すること。
+  ② 肯定（Affirmative）/ 否定（Negative）のバランス制御
+     各チームのAff/Neg回数の差が1以内に収まるよう、立場の割り当てを制御する。
+     例: 4試合ならAff2・Neg2、5試合ならAff2・Neg3 or Aff3・Neg2。
+
+  ③ シード校配置バランス
+     各シードチームにおいて「シード同士の対戦数」と「シード vs 非シードの対戦数」の
+     差が1以内に収まるよう、ペア選択スコアに重みを付ける。
 
 【入力】
-  teams: list[dict]    — event_teams テーブルの行（id, event_section_id, event_school_id 必須）
+  teams: list[dict]    — event_teams テーブルの行（id, event_section_id, event_school_id, is_seed 必須）
   segments: list[dict] — event_timetable_segments テーブルの行（id, order_number 必須）
   rooms: list[dict]    — event_rooms テーブルの行（id, order_number 必須）
-  parallel_matches_map: dict[int, int] — 時間枠ID -> 並行試合数
+  section_segment_parallel_matches: dict[str, int] — キー: "{section_id}_{segment_id}", 値: 並行試合数
 
 【出力】
   list[dict] with keys:
@@ -35,10 +39,12 @@ def generate_matches_by_slots(
     teams: list[dict],
     segments: list[dict],
     rooms: list[dict],
-    parallel_matches_map: dict[int, int],
+    section_segment_parallel_matches: dict[str, int],
+    confirmed_matches: list[dict] = None,
+    as_skeleton: bool = False,
 ) -> tuple[list[dict], list[str]]:
     """
-    時間枠の並行試合数に基づいて、チームを対戦ペアに割り振り、会場スロットを割り当てる。
+    各部門の各時間枠の並行試合数設定に基づいて、チームを対戦ペアに割り振り、会場スロットを割り当てる。
 
     Returns: (generated_matches, warnings)
     """
@@ -52,10 +58,48 @@ def generate_matches_by_slots(
     if not rooms:
         return [], ["会場が登録されていません。"]
 
-    # チームごとの累計対戦数カウンター
+    if confirmed_matches is None:
+        confirmed_matches = []
+
+    # チームごとの累計試合数カウンター
     team_match_count: dict[int, int] = {t["id"]: 0 for t in teams}
+    # チームごとの Aff/Neg 累計カウンター
+    team_aff_count: dict[int, int] = {t["id"]: 0 for t in teams}
+    team_neg_count: dict[int, int] = {t["id"]: 0 for t in teams}
     # これまでに対戦したペア履歴
     played_pairs: set[tuple[int, int]] = set()
+    # シードチームの対戦相手種別カウンター（シード同士 vs シード vs 非シード）
+    seed_vs_seed_count: dict[int, int] = {t["id"]: 0 for t in teams if t.get("is_seed")}
+    seed_vs_non_count: dict[int, int] = {t["id"]: 0 for t in teams if t.get("is_seed")}
+
+    # 既に確定している試合の対戦情報を履歴・カウントに反映
+    team_is_seed: dict[int, bool] = {t["id"]: bool(t.get("is_seed")) for t in teams}
+
+    for m in confirmed_matches:
+        aff_id = m.get("aff_team_id")
+        neg_id = m.get("neg_team_id")
+        if aff_id in team_match_count:
+            team_match_count[aff_id] += 1
+            team_aff_count[aff_id] = team_aff_count.get(aff_id, 0) + 1
+        if neg_id in team_match_count:
+            team_match_count[neg_id] += 1
+            team_neg_count[neg_id] = team_neg_count.get(neg_id, 0) + 1
+        if aff_id and neg_id:
+            played_pairs.add((aff_id, neg_id))
+            played_pairs.add((neg_id, aff_id))
+            # シードカウント更新
+            aff_seed = team_is_seed.get(aff_id, False)
+            neg_seed = team_is_seed.get(neg_id, False)
+            if aff_seed:
+                if neg_seed:
+                    seed_vs_seed_count[aff_id] = seed_vs_seed_count.get(aff_id, 0) + 1
+                else:
+                    seed_vs_non_count[aff_id] = seed_vs_non_count.get(aff_id, 0) + 1
+            if neg_seed:
+                if aff_seed:
+                    seed_vs_seed_count[neg_id] = seed_vs_seed_count.get(neg_id, 0) + 1
+                else:
+                    seed_vs_non_count[neg_id] = seed_vs_non_count.get(neg_id, 0) + 1
 
     # ソートされた時間枠と会場
     sorted_segments = sorted(segments, key=lambda s: s.get("order_number") or 0)
@@ -68,132 +112,341 @@ def generate_matches_by_slots(
         if sec_id is not None:
             section_teams.setdefault(sec_id, []).append(team)
 
-    # 試合ごとのAff/Neg平準化用のカウンタ
-    flip_flag = False
-
     for seg in sorted_segments:
         seg_id = seg["id"]
-        parallel_count = parallel_matches_map.get(seg_id, 0)
-        if parallel_count <= 0:
+
+        # このセグメント全体の確定済み（既定）の部屋IDとチームIDを収集
+        seg_confirmed = [m for m in confirmed_matches if m.get("event_timetable_segment_id") == seg_id]
+        confirmed_room_ids = {m.get("event_room_id") for m in seg_confirmed if m.get("event_room_id") is not None}
+        confirmed_team_ids = {m.get("aff_team_id") for m in seg_confirmed if m.get("aff_team_id") is not None} | \
+                             {m.get("neg_team_id") for m in seg_confirmed if m.get("neg_team_id") is not None}
+
+        # 部門ごとにこのセグメントで生成すべき新規試合数を算出
+        sec_needed_counts: dict[int, int] = {}
+        total_needed_new = 0
+        for sec_id in section_teams.keys():
+            param_key = f"{sec_id}_{seg_id}"
+            param_count = section_segment_parallel_matches.get(param_key, 0)
+            sec_confirmed_count = sum(1 for m in seg_confirmed if m.get("event_section_id") == sec_id)
+            needed = max(0, param_count - sec_confirmed_count)
+            if needed > 0:
+                sec_needed_counts[sec_id] = needed
+                total_needed_new += needed
+
+        if total_needed_new <= 0:
             continue
 
-        # 会場数が足りない場合
-        if len(sorted_rooms) < parallel_count:
+        # 空いている部屋を選択（確定済みの部屋以外から、順序が上のものを選択）
+        available_rooms = [r for r in sorted_rooms if r["id"] not in confirmed_room_ids]
+        if len(available_rooms) < total_needed_new:
             warnings.append(
-                f"時間枠「{seg['name']}」の並行試合数 {parallel_count} に対して、"
-                f"登録されている会場数 ({len(sorted_rooms)}) が不足しています。"
-                f"割り当て可能な {len(sorted_rooms)} 試合のみ生成します。"
+                f"時間枠「{seg['name']}」の新規生成必要数 {total_needed_new} に対して、"
+                f"使用可能な空き会場数 ({len(available_rooms)}) が不足しています。"
+                f"割り当て可能な {len(available_rooms)} 試合のみ生成します。"
             )
-            parallel_count = len(sorted_rooms)
+            total_needed_new = len(available_rooms)
 
         # この時間枠で対戦に使用する会場
-        used_rooms = sorted_rooms[:parallel_count]
+        used_rooms = available_rooms[:total_needed_new]
 
-        # 部門ごとの利用可能チーム
-        seg_available_teams: dict[int, list[dict]] = {
-            sec_id: [t for t in sec_teams]
-            for sec_id, sec_teams in section_teams.items()
-        }
+        # 部門ごとの利用可能チーム (確定済みのチームを除く)
+        seg_available_teams: dict[int, list[dict]] = {}
+        for sec_id, sec_teams in section_teams.items():
+            seg_available_teams[sec_id] = [
+                t for t in sec_teams if t["id"] not in confirmed_team_ids
+            ]
 
-        # この時間枠での対戦カードを生成
-        matches_in_seg = 0
-        order_in_seg = 1
+        room_idx = 0
+        order_in_seg = len(seg_confirmed) + 1  # 確定済み試合の後ろから開始
 
-        # 会場スロット分だけ試合を組む
-        for room in used_rooms:
-            # 対戦可能ペアを探す
-            # 優先度:
-            # 1. 累計対戦数が最も少ない部門
-            # 2. その部門内で、累計対戦数が最も少ないチーム
-            best_pair = _find_best_pair(
-                seg_available_teams=seg_available_teams,
-                team_match_count=team_match_count,
-                played_pairs=played_pairs,
-            )
+        # 部門ごとに必要な試合数だけペアを生成し、部屋に割り当てる
+        for sec_id, needed_count in sorted(sec_needed_counts.items()):
+            for _ in range(needed_count):
+                if room_idx >= len(used_rooms):
+                    break
 
-            if not best_pair:
-                # ペアが組めない場合（その時間枠で対戦できる部門のチームが残っていない）
-                break
+                room = used_rooms[room_idx]
 
-            team_a, team_b, sec_id = best_pair
+                if as_skeleton:
+                    generated_matches.append({
+                        "event_timetable_segment_id": seg_id,
+                        "event_room_id": room["id"],
+                        "event_section_id": sec_id,
+                        "aff_team_id": None,
+                        "neg_team_id": None,
+                        "order_number_in_segment": order_in_seg,
+                    })
+                    room_idx += 1
+                    order_in_seg += 1
+                    continue
 
-            # 使用したチームをこの時間枠の利用可能リストから除外
-            seg_available_teams[sec_id].remove(team_a)
-            seg_available_teams[sec_id].remove(team_b)
+                # この部門内で最も適切なペアを探索
+                best_pair = _find_best_pair(
+                    sec_id=sec_id,
+                    available_teams=seg_available_teams.get(sec_id, []),
+                    team_match_count=team_match_count,
+                    team_aff_count=team_aff_count,
+                    team_neg_count=team_neg_count,
+                    played_pairs=played_pairs,
+                    seed_vs_seed_count=seed_vs_seed_count,
+                    seed_vs_non_count=seed_vs_non_count,
+                    team_is_seed=team_is_seed,
+                )
 
-            # 対戦カウント更新と履歴登録
-            team_match_count[team_a["id"]] += 1
-            team_match_count[team_b["id"]] += 1
-            played_pairs.add((team_a["id"], team_b["id"]))
-            played_pairs.add((team_b["id"], team_a["id"]))
+                if not best_pair:
+                    warnings.append(
+                        f"時間枠「{seg['name']}」の部門ID「{sec_id}」において、"
+                        f"対戦可能なペアを組めるチームが不足したため、試合が生成できませんでした。"
+                    )
+                    continue
 
-            # 肯定・否定の公平化（交互に入れ替え）
-            if flip_flag:
-                aff, neg = team_b, team_a
-            else:
-                aff, neg = team_a, team_b
-            flip_flag = not flip_flag
+                team_a, team_b = best_pair
 
-            generated_matches.append({
-                "event_timetable_segment_id": seg_id,
-                "event_room_id": room["id"],
-                "event_section_id": sec_id,
-                "aff_team_id": aff["id"],
-                "neg_team_id": neg["id"],
-                "order_number_in_segment": order_in_seg,
-            })
-            matches_in_seg += 1
-            order_in_seg += 1
+                # 使用したチームをこの時間枠の利用可能リストから除外
+                seg_available_teams[sec_id].remove(team_a)
+                seg_available_teams[sec_id].remove(team_b)
 
-        if matches_in_seg < parallel_count:
-            warnings.append(
-                f"時間枠「{seg['name']}」において、同じ部門内で対戦相手を組めるチームが不足したため、"
-                f"並行試合数 {parallel_count} に対し {matches_in_seg} 試合のみ生成されました。"
-            )
+                # 対戦カウント更新と履歴登録
+                team_match_count[team_a["id"]] += 1
+                team_match_count[team_b["id"]] += 1
+                played_pairs.add((team_a["id"], team_b["id"]))
+                played_pairs.add((team_b["id"], team_a["id"]))
+
+                # シードカウント更新
+                a_seed = team_is_seed.get(team_a["id"], False)
+                b_seed = team_is_seed.get(team_b["id"], False)
+                if a_seed:
+                    if b_seed:
+                        seed_vs_seed_count[team_a["id"]] = seed_vs_seed_count.get(team_a["id"], 0) + 1
+                    else:
+                        seed_vs_non_count[team_a["id"]] = seed_vs_non_count.get(team_a["id"], 0) + 1
+                if b_seed:
+                    if a_seed:
+                        seed_vs_seed_count[team_b["id"]] = seed_vs_seed_count.get(team_b["id"], 0) + 1
+                    else:
+                        seed_vs_non_count[team_b["id"]] = seed_vs_non_count.get(team_b["id"], 0) + 1
+
+                # ② Aff/Neg バランスを考慮して立場を決定
+                aff, neg = _assign_aff_neg(
+                    team_a, team_b, team_aff_count, team_neg_count
+                )
+
+                # Aff/Neg カウント更新
+                team_aff_count[aff["id"]] = team_aff_count.get(aff["id"], 0) + 1
+                team_neg_count[neg["id"]] = team_neg_count.get(neg["id"], 0) + 1
+
+                generated_matches.append({
+                    "event_timetable_segment_id": seg_id,
+                    "event_room_id": room["id"],
+                    "event_section_id": sec_id,
+                    "aff_team_id": aff["id"],
+                    "neg_team_id": neg["id"],
+                    "order_number_in_segment": order_in_seg,
+                })
+                room_idx += 1
+                order_in_seg += 1
+
+    # ① 試合数の平準化チェックと警告
+    if not as_skeleton:
+        _check_match_count_balance(
+            teams=teams,
+            team_match_count=team_match_count,
+            confirmed_matches=confirmed_matches,
+            generated_matches=generated_matches,
+            warnings=warnings,
+        )
 
     return generated_matches, warnings
 
 
+def _assign_aff_neg(
+    team_a: dict,
+    team_b: dict,
+    team_aff_count: dict[int, int],
+    team_neg_count: dict[int, int],
+) -> tuple[dict, dict]:
+    """
+    ② Aff/Neg バランスを考慮して、team_a と team_b どちらが肯定側かを決める。
+    Aff回数 - Neg回数 が小さい方を肯定側に割り当てる（バランス優先）。
+    同じ場合はランダムに決める。
+    """
+    a_bias = team_aff_count.get(team_a["id"], 0) - team_neg_count.get(team_a["id"], 0)
+    b_bias = team_aff_count.get(team_b["id"], 0) - team_neg_count.get(team_b["id"], 0)
+
+    if a_bias < b_bias:
+        # team_a の方が Aff が少ない → team_a を Aff に
+        return team_a, team_b
+    elif b_bias < a_bias:
+        # team_b の方が Aff が少ない → team_b を Aff に
+        return team_b, team_a
+    else:
+        # 同等 → ランダム
+        if random.random() < 0.5:
+            return team_a, team_b
+        return team_b, team_a
+
+
 def _find_best_pair(
-    seg_available_teams: dict[int, list[dict]],
+    sec_id: int,
+    available_teams: list[dict],
+    team_match_count: dict[int, int],
+    team_aff_count: dict[int, int],
+    team_neg_count: dict[int, int],
+    played_pairs: set[tuple[int, int]],
+    seed_vs_seed_count: dict[int, int],
+    seed_vs_non_count: dict[int, int],
+    team_is_seed: dict[int, bool],
+) -> tuple[dict, dict] | None:
+    """
+    指定された部門内で最も適切な対戦ペアを1組探し、(team_a, team_b) で返す。
+
+    スコアリング基準（低いほど良い）:
+      - 試合数が多いチームは避ける（① 平準化 - 最優先）
+      - 同一校対戦は避ける（絶対条件）
+      - 過去の対戦履歴がある対戦は避ける
+      - ③ シード同士の偏りを避ける（優先度低）
+    """
+    if len(available_teams) < 2:
+        return None
+
+    # 利用可能チームの中での最小試合数を特定
+    min_avail_match_count = min(team_match_count[t["id"]] for t in available_teams)
+
+    # 試合数が同じチーム同士をグループ化して、それぞれシャッフルすることで乱数を導入
+    match_count_groups: dict[int, list[dict]] = {}
+    for t in available_teams:
+        c = team_match_count[t["id"]]
+        match_count_groups.setdefault(c, []).append(t)
+
+    sorted_avail = []
+    for c in sorted(match_count_groups.keys()):
+        group = match_count_groups[c]
+        random.shuffle(group) # 同一試合数内をランダムシャッフル
+        sorted_avail.extend(group)
+
+    best_pairs: list[tuple[dict, dict]] = []
+    best_score = float("inf")
+
+    for i, t_a in enumerate(sorted_avail):
+        for t_b in sorted_avail[i + 1:]:
+            score = _compute_pair_score(
+                t_a, t_b,
+                team_match_count=team_match_count,
+                played_pairs=played_pairs,
+                seed_vs_seed_count=seed_vs_seed_count,
+                seed_vs_non_count=seed_vs_non_count,
+                team_is_seed=team_is_seed,
+                min_avail_match_count=min_avail_match_count,
+            )
+
+            if score < best_score:
+                best_score = score
+                best_pairs = [(t_a, t_b)]
+            elif score == best_score:
+                best_pairs.append((t_a, t_b))
+
+    if not best_pairs:
+        return None
+
+    # 同率最小スコアのペアが複数ある場合、ランダムに選択（決定論的な挙動の回避）
+    return random.choice(best_pairs)
+
+
+def _compute_pair_score(
+    t_a: dict,
+    t_b: dict,
     team_match_count: dict[int, int],
     played_pairs: set[tuple[int, int]],
-) -> tuple[dict, dict, int] | None:
-    """最も適切な対戦ペアを1組探し、(team_a, team_b, section_id) で返す。"""
-    # 候補ペアを探索
-    best_pair: tuple[dict, dict, int] | None = None
-    min_combined_matches = float("inf")
+    seed_vs_seed_count: dict[int, int],
+    seed_vs_non_count: dict[int, int],
+    team_is_seed: dict[int, bool],
+    min_avail_match_count: int,
+) -> float:
+    """ペアのスコアを計算する（低いほど良い）。"""
+    # 試合数の平準化 (最優先): 最小試合数からの乖離を大きくペナルティ化
+    diff_a = team_match_count[t_a["id"]] - min_avail_match_count
+    diff_b = team_match_count[t_b["id"]] - min_avail_match_count
+    score = float((diff_a + diff_b) * 5000)
 
-    # 部門ごとに探索
-    for sec_id, available in seg_available_teams.items():
-        if len(available) < 2:
-            continue
+    # 同一校対戦は最悪（絶対回避条件）
+    is_same_school = (
+        t_a.get("event_school_id") is not None
+        and t_a.get("event_school_id") == t_b.get("event_school_id")
+    )
+    if is_same_school:
+        score += 100000
 
-        # チームを累計対戦数でソート (少ない順)
-        sorted_avail = sorted(available, key=lambda t: team_match_count[t["id"]])
+    # 過去対戦済みは大きなペナルティ
+    if (t_a["id"], t_b["id"]) in played_pairs:
+        score += 1000
 
-        for i, t_a in enumerate(sorted_avail):
-            for t_b in sorted_avail[i + 1:]:
-                # 同一校対戦は可能な限り避ける
-                is_same_school = (
-                    t_a.get("event_school_id") is not None
-                    and t_a.get("event_school_id") == t_b.get("event_school_id")
-                )
+    # ③ シード校配置バランス（優先度低: 試合数平準化や過去対戦防止を妨げない強さにする）
+    a_seed = team_is_seed.get(t_a["id"], False)
+    b_seed = team_is_seed.get(t_b["id"], False)
 
-                # 過去の対戦履歴があるか
-                has_played = (t_a["id"], t_b["id"]) in played_pairs
+    if a_seed and b_seed:
+        # 両方シード
+        for seed_id in [t_a["id"], t_b["id"]]:
+            svs = seed_vs_seed_count.get(seed_id, 0)
+            svn = seed_vs_non_count.get(seed_id, 0)
+            diff_after = (svs + 1) - svn
+            if diff_after > 1:
+                score += 10 * diff_after
 
-                # ペア選定スコア (累計対戦数の合計)
-                score = team_match_count[t_a["id"]] + team_match_count[t_b["id"]]
+    elif a_seed and not b_seed:
+        # t_a はシード、t_b は非シード
+        svs = seed_vs_seed_count.get(t_a["id"], 0)
+        svn = seed_vs_non_count.get(t_a["id"], 0)
+        diff_after = (svn + 1) - svs
+        if diff_after > 1:
+            score += 5 * diff_after
 
-                # 同一校かつ過去対戦ありは最悪のスコア
-                if is_same_school:
-                    score += 1000
-                if has_played:
-                    score += 100
+    elif not a_seed and b_seed:
+        # t_b はシード、t_a は非シード
+        svs = seed_vs_seed_count.get(t_b["id"], 0)
+        svn = seed_vs_non_count.get(t_b["id"], 0)
+        diff_after = (svn + 1) - svs
+        if diff_after > 1:
+            score += 5 * diff_after
 
-                if score < min_combined_matches:
-                    min_combined_matches = score
-                    best_pair = (t_a, t_b, sec_id)
+    return score
 
-    return best_pair
+
+def _check_match_count_balance(
+    teams: list[dict],
+    team_match_count: dict[int, int],
+    confirmed_matches: list[dict],
+    generated_matches: list[dict],
+    warnings: list[str],
+) -> None:
+    """
+    ① 試合数の平準化チェック: 最大と最小の差が2以上ある場合に警告を出す。
+    ゼロ試合のチームは除外する（未参加チームが混在する場合を考慮）。
+    """
+    active_teams = [t for t in teams if team_match_count.get(t["id"], 0) > 0]
+    if not active_teams:
+        return
+
+    counts = [team_match_count[t["id"]] for t in active_teams]
+    min_count = min(counts)
+    max_count = max(counts)
+
+    if max_count - min_count >= 2:
+        imbalanced = [
+            t for t in active_teams
+            if team_match_count[t["id"]] != min_count and team_match_count[t["id"]] != max_count
+        ]
+        # 最大試合数のチームと最小試合数のチームを列挙
+        max_teams = [t["name"] for t in active_teams if team_match_count[t["id"]] == max_count]
+        min_teams = [t["name"] for t in active_teams if team_match_count[t["id"]] == min_count]
+        warnings.append(
+            f"⚠️ 試合数の不均等があります: 最大 {max_count} 試合 ({', '.join(max_teams[:3])}{'...' if len(max_teams) > 3 else ''}) / "
+            f"最小 {min_count} 試合 ({', '.join(min_teams[:3])}{'...' if len(min_teams) > 3 else ''})。"
+            f"「最小試合数と最大試合数の差は {max_count - min_count} 試合」です。"
+            f"可能であれば並行試合数の設定を見直してください。"
+        )
+    elif max_count - min_count == 1:
+        warnings.append(
+            f"ℹ️ 試合数が1試合差のチームがあります（最小 {min_count} 試合 / 最大 {max_count} 試合）。"
+            f"これはチーム数・枠数の関係上やむを得ない場合があります。"
+        )

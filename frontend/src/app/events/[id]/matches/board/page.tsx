@@ -10,6 +10,8 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/Table";
 import { fetchMatches, fetchMatchSummary, MatchListItem, MatchSummary } from "@/lib/matchApi";
+import { fetchSections, Section } from "@/lib/masterApi";
+import { getSectionColorById } from "@/lib/sectionColors";
 
 function StatusBadge({ confirmed, hasTeams }: { confirmed: boolean; hasTeams: boolean }) {
   if (!hasTeams) return <Badge variant="outline" className="text-[10px]">未割当</Badge>;
@@ -25,6 +27,7 @@ export default function BoardPage() {
 
   const [matches, setMatches] = useState<MatchListItem[]>([]);
   const [summary, setSummary] = useState<MatchSummary>({ total: 0, confirmed: 0, scheduled: 0 });
+  const [sectionList, setSectionList] = useState<Section[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,17 +35,43 @@ export default function BoardPage() {
   const [fSection, setFSection] = useState("all");
   const [fStatus, setFStatus] = useState("all");
 
+  useEffect(() => {
+    const savedSegment = sessionStorage.getItem("board_filter_segment");
+    const savedSection = sessionStorage.getItem("board_filter_section");
+    const savedStatus = sessionStorage.getItem("board_filter_status");
+    if (savedSegment) setFSegment(savedSegment);
+    if (savedSection) setFSection(savedSection);
+    if (savedStatus) setFStatus(savedStatus);
+  }, []);
+
+  const handleSegmentChange = (val: string) => {
+    setFSegment(val);
+    sessionStorage.setItem("board_filter_segment", val);
+  };
+
+  const handleSectionChange = (val: string) => {
+    setFSection(val);
+    sessionStorage.setItem("board_filter_section", val);
+  };
+
+  const handleStatusChange = (val: string) => {
+    setFStatus(val);
+    sessionStorage.setItem("board_filter_status", val);
+  };
+
   const load = useCallback(async () => {
     if (!eventId) return;
     try {
       setLoading(true);
       setError(null);
-      const [matchesData, summaryData] = await Promise.all([
+      const [matchesData, summaryData, sectionsData] = await Promise.all([
         fetchMatches(eventId),
         fetchMatchSummary(eventId),
+        fetchSections(eventId),
       ]);
       setMatches(matchesData);
       setSummary(summaryData);
+      setSectionList(sectionsData);
     } catch (e) {
       setError(e instanceof Error ? e.message : "データの取得に失敗しました");
     } finally {
@@ -117,21 +146,21 @@ export default function BoardPage() {
 
       <Card>
         <CardHeader className="flex flex-wrap gap-3">
-          <select value={fSegment} onChange={(e) => setFSegment(e.target.value)}
+          <select value={fSegment} onChange={(e) => handleSegmentChange(e.target.value)}
             className="px-3 py-2 rounded-lg border border-border bg-white text-sm focus:ring-2 focus:ring-primary focus:outline-none">
             <option value="all">すべての時間枠</option>
             {segments.map(({ id, name }) => (
               <option key={id} value={String(id)}>{name}</option>
             ))}
           </select>
-          <select value={fSection} onChange={(e) => setFSection(e.target.value)}
+          <select value={fSection} onChange={(e) => handleSectionChange(e.target.value)}
             className="px-3 py-2 rounded-lg border border-border bg-white text-sm focus:ring-2 focus:ring-primary focus:outline-none">
             <option value="all">すべての部門</option>
             {sections.map(({ id, name }) => (
               <option key={id} value={String(id)}>{name}</option>
             ))}
           </select>
-          <select value={fStatus} onChange={(e) => setFStatus(e.target.value)}
+          <select value={fStatus} onChange={(e) => handleStatusChange(e.target.value)}
             className="px-3 py-2 rounded-lg border border-border bg-white text-sm focus:ring-2 focus:ring-primary focus:outline-none">
             <option value="all">すべてのステータス</option>
             <option value="confirmed">確定済み</option>
@@ -188,7 +217,17 @@ export default function BoardPage() {
                       <TableCell className="text-sm font-medium">{m.timetable_segment_name ?? "-"}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{m.room_name ?? "-"}</TableCell>
                       <TableCell>
-                        {m.section_name && <Badge variant="outline" className="text-[10px] border-primary/30 text-primary">{m.section_name}</Badge>}
+                        {m.section_name && (() => {
+                          const color = getSectionColorById(m.event_section_id, sectionList);
+                          return (
+                            <span
+                              style={{ background: color.bg, color: color.text, border: `1px solid ${color.border}` }}
+                              className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                            >
+                              {m.section_name}
+                            </span>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell>
                         <span className={`font-medium ${affWon ? "text-primary" : ""}`}>

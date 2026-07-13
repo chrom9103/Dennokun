@@ -66,7 +66,7 @@ export default function MatchEditPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [votes, setVotes] = useState<VotingDetail[]>([emptyVote(0), emptyVote(1), emptyVote(2)]);
+  const [votes, setVotes] = useState<VotingDetail[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isConfirmed, setIsConfirmed] = useState(false);
@@ -79,12 +79,21 @@ export default function MatchEditPage() {
       const data = await fetchMatch(eventId, matchId);
       setMatch(data);
       setIsConfirmed(data.is_result_confirmed);
-      if (data.voting_details && data.voting_details.length > 0) {
-        setVotes(data.voting_details.map((vd, i) => ({ ...emptyVote(i), ...vd })));
-      } else {
-        const judgeCount = data.judges_assignment_count ?? 3;
-        setVotes(Array.from({ length: judgeCount }, (_, i) => emptyVote(i)));
-      }
+      const assignedJudges = [
+        data.main_judge_staff_id,
+        data.sub_judge1_staff_id,
+        data.sub_judge2_staff_id,
+        data.sub_judge3_staff_id,
+        data.sub_judge4_staff_id
+      ];
+      let judgeCount = assignedJudges.filter(id => id !== null && id !== undefined).length;
+      judgeCount = Math.max(1, Math.min(5, judgeCount));
+
+      const actualVotes = Array.from({ length: judgeCount }, (_, i) => {
+        const existing = data.voting_details?.find(vd => vd.judge_index === i);
+        return existing ? { ...emptyVote(i), ...existing } : emptyVote(i);
+      });
+      setVotes(actualVotes);
     } catch (e) {
       setError(e instanceof Error ? e.message : "試合データの取得に失敗しました");
     } finally {
@@ -137,6 +146,9 @@ export default function MatchEditPage() {
       setIsConfirmed(confirm);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
+      if (confirm) {
+        router.push(`/events/${eventId}/matches/board`);
+      }
     } catch (e) {
       alert(e instanceof Error ? e.message : "保存に失敗しました");
     } finally {
@@ -260,6 +272,10 @@ export default function MatchEditPage() {
               judgeLabel = match?.sub_judge1_name ? `副審1(${match.sub_judge1_name})` : "副審1";
             } else if (idx === 2) {
               judgeLabel = match?.sub_judge2_name ? `副審2(${match.sub_judge2_name})` : "副審2";
+            } else if (idx === 3) {
+              judgeLabel = match?.sub_judge3_name ? `副審3(${match.sub_judge3_name})` : "副審3";
+            } else if (idx === 4) {
+              judgeLabel = match?.sub_judge4_name ? `副審4(${match.sub_judge4_name})` : "副審4";
             }
 
             return (

@@ -3,12 +3,15 @@ import React, { ReactNode } from "react";
 interface TableProps {
   children: ReactNode;
   className?: string;
+  wrapperClassName?: string;
 }
 
-export function Table({ children, className = "" }: TableProps) {
+export function Table({ children, className = "", wrapperClassName = "" }: TableProps) {
+  const hasOverflowClass = wrapperClassName.split(" ").some(c => c.startsWith("overflow-"));
+  const overflowClass = hasOverflowClass ? "" : "overflow-x-auto";
   return (
-    <div className={`w-full overflow-x-auto border border-border rounded-lg ${className}`}>
-      <table className="w-full text-sm border-collapse">
+    <div className={`w-full ${overflowClass} border border-border rounded-lg ${wrapperClassName}`}>
+      <table className={`w-full text-sm border-collapse ${className}`}>
         {children}
       </table>
     </div>

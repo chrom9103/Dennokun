@@ -54,9 +54,12 @@ class MatchListItem(BaseModel):
     aff_won: Optional[int] = None
     neg_won: Optional[int] = None
     is_result_confirmed: bool = False
+    is_staffs_fixed: bool = False
     main_judge_staff_id: Optional[int] = None
     sub_judge1_staff_id: Optional[int] = None
     sub_judge2_staff_id: Optional[int] = None
+    sub_judge3_staff_id: Optional[int] = None
+    sub_judge4_staff_id: Optional[int] = None
     timekeeper_staff_id: Optional[int] = None
     judges_assignment_count: Optional[int] = None
     order_number_in_segment: Optional[int] = None
@@ -96,6 +99,8 @@ class MatchDetail(MatchListItem):
     main_judge_name: Optional[str] = None
     sub_judge1_name: Optional[str] = None
     sub_judge2_name: Optional[str] = None
+    sub_judge3_name: Optional[str] = None
+    sub_judge4_name: Optional[str] = None
     timekeeper_name: Optional[str] = None
     start_time: Optional[str] = None
     end_time: Optional[str] = None
@@ -129,12 +134,19 @@ class StandingsEntry(BaseModel):
     wins: int
     losses: int
     matches_played: int
+    total_votes: int
     total_comm: int
     total_manner: int
     rank: int
+    final_rank: Optional[int] = None
 
     class Config:
         from_attributes = True
+
+
+class FinalRankUpdate(BaseModel):
+    team_id: int
+    final_rank: Optional[int] = None
 
 
 class MatchSummary(BaseModel):

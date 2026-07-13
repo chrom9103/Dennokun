@@ -10,6 +10,7 @@ from app.models.generate import (
     MatchAssignmentUpdate,
     DashboardSummary,
     AssignJudgesRequest,
+    LockSegmentStaffsRequest,
 )
 from app.models.matches import MatchDetail
 
@@ -60,7 +61,7 @@ async def generate_matches(event_id: int, req: GenerateMatchesRequest):
     """
     時間枠の並行試合数設定に基づいて、対戦・スロット（時間枠・会場）を自動生成し、DBに保存する。
 
-    overwrite=True の場合は既存試合を論理削除してから生成する。
+    確定していない試合のみを削除し、確定している試合を維持したまま再生成します。
     """
     try:
         from app.core.handle_db.teams import get_all_teams
@@ -68,8 +69,9 @@ async def generate_matches(event_id: int, req: GenerateMatchesRequest):
         from app.core.handle_db.rooms import get_all_rooms
         from app.core.handle_db.generate import (
             bulk_insert_matches,
-            delete_all_matches,
+            delete_unconfirmed_pre_round_matches,
         )
+        from app.core.handle_db.matches import get_all_matches
         from app.algorithm.match_generator import generate_matches_by_slots
 
         # 1. マスタデータ取得
@@ -77,23 +79,30 @@ async def generate_matches(event_id: int, req: GenerateMatchesRequest):
         segments = await get_all_timetable_segments(event_id)
         rooms = await get_all_rooms(event_id)
 
+        # 予選のセグメントのみにフィルタ
+        pre_round_segments = [s for s in segments if s.get("is_pre_round")]
+
+        # 既存の試合データを取得して、確定済み試合を抽出
+        existing_matches = await get_all_matches(event_id)
+        confirmed_matches = [m for m in existing_matches if m.get("is_staffs_fixed")]
+
         if not teams:
             raise HTTPException(
                 status_code=422,
                 detail="チームが登録されていません。先にチームを登録してください。"
             )
 
-        # 2. 既存試合の削除（overwrite モード）
-        deleted_count = 0
-        if req.overwrite:
-            deleted_count = await delete_all_matches(event_id)
+        # 2. 確定していない既存の予選試合のみ削除
+        deleted_count = await delete_unconfirmed_pre_round_matches(event_id)
 
-        # 3. 対戦・スロット割当の同時生成
+        # 3. 対戦・スロット割当の同時生成 (確定済み試合を引数に渡す)
         pairs, warnings = generate_matches_by_slots(
             teams=teams,
-            segments=segments,
+            segments=pre_round_segments,
             rooms=rooms,
-            parallel_matches_map=req.segment_parallel_matches,
+            section_segment_parallel_matches=req.section_segment_parallel_matches,
+            confirmed_matches=confirmed_matches,
+            as_skeleton=req.as_skeleton,
         )
 
         if not pairs:
@@ -125,6 +134,17 @@ async def delete_all_matches_endpoint(event_id: int):
         from app.core.handle_db.generate import delete_all_matches
         count = await delete_all_matches(event_id)
         return {"deleted_count": count, "status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/segments/{segment_id}/lock-staffs")
+async def lock_segment_staffs(event_id: int, segment_id: int, req: LockSegmentStaffsRequest):
+    """指定された時間枠の全試合の is_staffs_fixed カラムを一括更新する。"""
+    try:
+        from app.core.handle_db.generate import lock_segment_staffs as _lock
+        count = await _lock(event_id=event_id, segment_id=segment_id, is_fixed=req.is_fixed)
+        return {"status": "ok", "updated_count": count}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -178,17 +198,19 @@ async def assign_judges_endpoint(event_id: int, req: AssignJudgesRequest):
             )
 
         # 既存の試合データを基にジャッジを割り当てる
-        assigned_matches = assign_judges(
+        assigned_matches, warning = assign_judges(
             matches=matches,
             staffs=judge_staffs,
             teams=teams,
             judges_per_match=req.segment_judge_counts,
+            allow_reversed_past=req.allow_reversed_past,
+            allow_same_group_diff_team=req.allow_same_group_diff_team,
         )
 
         # 更新を保存
         await bulk_update_match_judges(assigned_matches)
 
-        return {"status": "ok", "updated_count": len(assigned_matches)}
+        return {"status": "ok", "updated_count": len(assigned_matches), "warning": warning}
 
     except HTTPException:
         raise

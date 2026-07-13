@@ -31,8 +31,9 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface GenerateMatchesRequest {
-  segment_parallel_matches: Record<number, number>;
+  section_segment_parallel_matches: Record<string, number>;
   overwrite?: boolean;
+  as_skeleton?: boolean;
 }
 
 export interface GenerateMatchesResponse {
@@ -49,9 +50,12 @@ export interface MatchAssignmentUpdate {
   main_judge_staff_id?: number | null;
   sub_judge1_staff_id?: number | null;
   sub_judge2_staff_id?: number | null;
+  sub_judge3_staff_id?: number | null;
+  sub_judge4_staff_id?: number | null;
   timekeeper_staff_id?: number | null;
   event_section_id?: number | null;
   order_number_in_segment?: number | null;
+  is_staffs_fixed?: boolean | null;
 }
 
 export interface DashboardSummary {
@@ -97,10 +101,27 @@ export async function fetchDashboardSummary(eventId: number): Promise<DashboardS
 
 export async function assignJudges(
   eventId: number,
-  segmentJudgeCounts: Record<number, number>
-): Promise<{ status: string; updated_count: number }> {
+  segmentJudgeCounts: Record<number, number>,
+  allowReversedPast: boolean = false,
+  allowSameGroupDiffTeam: boolean = false
+): Promise<{ status: string; updated_count: number; warning?: string }> {
   return apiFetch(`/api/events/${eventId}/assign-judges`, {
     method: "POST",
-    body: JSON.stringify({ segment_judge_counts: segmentJudgeCounts }),
+    body: JSON.stringify({ 
+      segment_judge_counts: segmentJudgeCounts,
+      allow_reversed_past: allowReversedPast,
+      allow_same_group_diff_team: allowSameGroupDiffTeam
+    }),
+  });
+}
+
+export async function toggleSegmentLock(
+  eventId: number,
+  segmentId: number,
+  isFixed: boolean
+): Promise<{ status: string; updated_count: number }> {
+  return apiFetch(`/api/events/${eventId}/segments/${segmentId}/lock-staffs`, {
+    method: "PUT",
+    body: JSON.stringify({ is_fixed: isFixed }),
   });
 }
