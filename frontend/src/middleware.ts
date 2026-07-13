@@ -9,10 +9,6 @@ export function middleware(request: NextRequest) {
 
   // /login ページへのアクセス
   if (pathname === "/login") {
-    if (hasToken) {
-      // ログイン済みならダッシュボードへ
-      return NextResponse.redirect(new URL("/dashboard", request.url));
-    }
     return NextResponse.next();
   }
 
