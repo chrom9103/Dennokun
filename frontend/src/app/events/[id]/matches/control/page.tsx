@@ -38,6 +38,8 @@ interface EditForm {
   sub_judge3_staff_id: string;
   sub_judge4_staff_id: string;
   timekeeper_staff_id: string;
+  event_section_id?: string;
+  order_number_in_segment?: number;
 }
 
 export default function ControlPage() {
@@ -92,6 +94,7 @@ export default function ControlPage() {
   const [fSection, setFSection] = useState("all");
   const [allowReversedPast, setAllowReversedPast] = useState(false);
   const [allowSameGroupDiffTeam, setAllowSameGroupDiffTeam] = useState(false);
+  const [allowPreMainDiff, setAllowPreMainDiff] = useState(false);
   const [unassignedStaffSegId, setUnassignedStaffSegId] = useState<number | null>(null);
 
   // Scroll Restorer to prevent page jumping during silent updates
@@ -345,7 +348,7 @@ export default function ControlPage() {
     setJudgeResult(null);
     setError(null);
     try {
-      const result = await assignJudges(eventId, segmentJudgeCounts, allowReversedPast, allowSameGroupDiffTeam);
+      const result = await assignJudges(eventId, segmentJudgeCounts, allowReversedPast, allowSameGroupDiffTeam, allowPreMainDiff);
       setJudgeResult(result);
       await load();
     } catch (e) {
@@ -383,6 +386,8 @@ export default function ControlPage() {
       sub_judge3_staff_id: m.sub_judge3_staff_id != null ? String(m.sub_judge3_staff_id) : "",
       sub_judge4_staff_id: m.sub_judge4_staff_id != null ? String(m.sub_judge4_staff_id) : "",
       timekeeper_staff_id: m.timekeeper_staff_id != null ? String(m.timekeeper_staff_id) : "",
+      event_section_id: m.event_section_id != null ? String(m.event_section_id) : "",
+      order_number_in_segment: m.order_number_in_segment ?? 1,
     });
   }
 
@@ -406,6 +411,8 @@ export default function ControlPage() {
       if (editForm.sub_judge3_staff_id) update.sub_judge3_staff_id = parseInt(editForm.sub_judge3_staff_id);
       if (editForm.sub_judge4_staff_id) update.sub_judge4_staff_id = parseInt(editForm.sub_judge4_staff_id);
       if (editForm.timekeeper_staff_id) update.timekeeper_staff_id = parseInt(editForm.timekeeper_staff_id);
+      if (editForm.event_section_id) update.event_section_id = parseInt(editForm.event_section_id);
+      if (editForm.order_number_in_segment) update.order_number_in_segment = editForm.order_number_in_segment;
 
       await updateMatchAssignment(eventId, editForm.matchId, update);
       setEditForm(null);
@@ -946,6 +953,11 @@ export default function ControlPage() {
   };
 
   const judgeStaffs = staffs.filter((s) => s.can_be_main_judge || s.can_be_sub_judge);
+  const filteredTeamsForModal = useMemo(() => {
+    if (!editForm?.event_section_id) return teams;
+    const sectionId = parseInt(editForm.event_section_id);
+    return teams.filter((t) => t.event_section_id === sectionId);
+  }, [teams, editForm?.event_section_id]);
   const uniqueSegments = Array.from(new Map(matches.filter((m) => m.timetable_segment_name).map((m) => [m.event_timetable_segment_id, m.timetable_segment_name])).entries());
   const uniqueSections = Array.from(new Map(matches.filter((m) => m.section_name).map((m) => [m.event_section_id, m.section_name])).entries());
 
@@ -1150,6 +1162,21 @@ export default function ControlPage() {
                     className="text-xs font-semibold text-foreground cursor-pointer select-none"
                   >
                     同じグループ（学校）に属していても別チームであれば割り当てを許可する
+                  </label>
+                </div>
+                <div className="flex items-center gap-2 border-t border-border/40 pt-2">
+                  <input
+                    id="allow-pre-main-diff-checkbox"
+                    type="checkbox"
+                    checked={allowPreMainDiff}
+                    onChange={(e) => setAllowPreMainDiff(e.target.checked)}
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20 cursor-pointer"
+                  />
+                  <label
+                    htmlFor="allow-pre-main-diff-checkbox"
+                    className="text-xs font-semibold text-foreground cursor-pointer select-none"
+                  >
+                    予選と本戦が異なっていれば過去担当済みであっても割り当てを許可する
                   </label>
                 </div>
               </div>
@@ -1452,7 +1479,7 @@ export default function ControlPage() {
                                     size="sm"
                                     className="p-1.5 h-auto rounded-full text-primary hover:bg-primary/5 active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
                                     onClick={() => openEdit(m)}
-                                    disabled={m.is_staffs_fixed || m.id < 0}
+                                    disabled={m.is_staffs_fixed}
                                   >
                                     <Icon name="tune" size={18} />
                                   </Button>
@@ -1514,7 +1541,7 @@ export default function ControlPage() {
                                     size="sm"
                                     className="p-1.5 h-auto rounded-full text-primary hover:bg-primary/5 active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
                                     onClick={() => openEdit(m)}
-                                    disabled={m.is_staffs_fixed || m.id < 0}
+                                    disabled={m.is_staffs_fixed}
                                   >
                                     <Icon name="tune" size={18} />
                                   </Button>
@@ -1587,7 +1614,7 @@ export default function ControlPage() {
                   onChange={(e) => setEditForm((f) => f ? { ...f, aff_team_id: e.target.value } : f)}
                   className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary focus:outline-none">
                   <option value="">未設定</option>
-                  {teams.map((t) => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
+                  {filteredTeamsForModal.map((t) => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
                 </select>
               </div>
               <div className="space-y-1.5">
@@ -1596,7 +1623,7 @@ export default function ControlPage() {
                   onChange={(e) => setEditForm((f) => f ? { ...f, neg_team_id: e.target.value } : f)}
                   className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary focus:outline-none">
                   <option value="">未設定</option>
-                  {teams.map((t) => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
+                  {filteredTeamsForModal.map((t) => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
                 </select>
               </div>
               <div className="space-y-1.5">

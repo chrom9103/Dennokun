@@ -36,6 +36,8 @@ class MatchAssignmentUpdate(BaseModel):
     main_judge_staff_id: Optional[int] = None
     sub_judge1_staff_id: Optional[int] = None
     sub_judge2_staff_id: Optional[int] = None
+    sub_judge3_staff_id: Optional[int] = None
+    sub_judge4_staff_id: Optional[int] = None
     timekeeper_staff_id: Optional[int] = None
     event_section_id: Optional[int] = None
     order_number_in_segment: Optional[int] = None
@@ -65,4 +67,5 @@ class AssignJudgesRequest(BaseModel):
     segment_judge_counts: dict[int, int]  # key: segment_id, value: 各枠の1試合あたりのジャッジ数
     allow_reversed_past: bool = False     # 肯否逆であれば過去に見た学校であっても割り当てを許可するか
     allow_same_group_diff_team: bool = False # 同じグループ（学校）に属していても別チームであれば割り当てを許可するか
+    allow_pre_main_diff: bool = False     # 予選と本戦が異なっていれば過去担当済みであっても割り当てを許可するか
 

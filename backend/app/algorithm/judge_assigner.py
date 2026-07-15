@@ -27,6 +27,7 @@ def assign_judges(
     judges_per_match: int | dict[int, int] = 3,
     allow_reversed_past: bool = False,
     allow_same_group_diff_team: bool = False,
+    allow_pre_main_diff: bool = False,
 ) -> tuple[list[dict], str | None]:
     """
     試合リストにジャッジ（主審・副審）および司会タイマーを割り当てる。
@@ -122,6 +123,7 @@ def assign_judges(
         if m.get("is_staffs_fixed"):
             seg_id = m.get("event_timetable_segment_id")
             section_id = m.get("event_section_id")
+            is_pre = bool(m.get("is_pre_round"))
             aff_team_id = m.get("aff_team_id")
             neg_team_id = m.get("neg_team_id")
             aff_school_id = team_school_map.get(aff_team_id) if aff_team_id else None
@@ -135,20 +137,32 @@ def assign_judges(
                     if section_id is not None:
                         # 学校
                         if aff_school_id:
-                            k = (aff_school_id, "aff") if allow_reversed_past else aff_school_id
+                            if allow_pre_main_diff:
+                                k = (aff_school_id, "aff", is_pre) if allow_reversed_past else (aff_school_id, is_pre)
+                            else:
+                                k = (aff_school_id, "aff") if allow_reversed_past else aff_school_id
                             d = assigned_schools[sid].setdefault(section_id, {})
                             d[k] = d.get(k, 0) + 1
                         if neg_school_id:
-                            k = (neg_school_id, "neg") if allow_reversed_past else neg_school_id
+                            if allow_pre_main_diff:
+                                k = (neg_school_id, "neg", is_pre) if allow_reversed_past else (neg_school_id, is_pre)
+                            else:
+                                k = (neg_school_id, "neg") if allow_reversed_past else neg_school_id
                             d = assigned_schools[sid].setdefault(section_id, {})
                             d[k] = d.get(k, 0) + 1
                         # チーム
                         if aff_team_id:
-                            k = (aff_team_id, "aff") if allow_reversed_past else aff_team_id
+                            if allow_pre_main_diff:
+                                k = (aff_team_id, "aff", is_pre) if allow_reversed_past else (aff_team_id, is_pre)
+                            else:
+                                k = (aff_team_id, "aff") if allow_reversed_past else aff_team_id
                             d = assigned_teams[sid].setdefault(section_id, {})
                             d[k] = d.get(k, 0) + 1
                         if neg_team_id:
-                            k = (neg_team_id, "neg") if allow_reversed_past else neg_team_id
+                            if allow_pre_main_diff:
+                                k = (neg_team_id, "neg", is_pre) if allow_reversed_past else (neg_team_id, is_pre)
+                            else:
+                                k = (neg_team_id, "neg") if allow_reversed_past else neg_team_id
                             d = assigned_teams[sid].setdefault(section_id, {})
                             d[k] = d.get(k, 0) + 1
 
@@ -184,6 +198,7 @@ def assign_judges(
         violation_count = 0
         if involved_schools:
             section_id = match.get("event_section_id")
+            current_is_pre = bool(match.get("is_pre_round"))
             if section_id is not None:
                 if allow_same_group_diff_team:
                     # チーム単位で重複チェック
@@ -191,26 +206,46 @@ def assign_judges(
                     for t_id in [aff_team_id, neg_team_id]:
                         if t_id is None:
                             continue
-                        if allow_reversed_past:
-                            if t_id == aff_team_id and past_team_dict.get((t_id, "aff"), 0) > 0:
-                                violation_count += 1
-                            if t_id == neg_team_id and past_team_dict.get((t_id, "neg"), 0) > 0:
-                                violation_count += 1
+                        if allow_pre_main_diff:
+                            if allow_reversed_past:
+                                if t_id == aff_team_id and past_team_dict.get((t_id, "aff", current_is_pre), 0) > 0:
+                                    violation_count += 1
+                                if t_id == neg_team_id and past_team_dict.get((t_id, "neg", current_is_pre), 0) > 0:
+                                    violation_count += 1
+                            else:
+                                if past_team_dict.get((t_id, current_is_pre), 0) > 0:
+                                    violation_count += 1
                         else:
-                            if past_team_dict.get(t_id, 0) > 0:
-                                violation_count += 1
+                            if allow_reversed_past:
+                                if t_id == aff_team_id and past_team_dict.get((t_id, "aff"), 0) > 0:
+                                    violation_count += 1
+                                if t_id == neg_team_id and past_team_dict.get((t_id, "neg"), 0) > 0:
+                                    violation_count += 1
+                            else:
+                                if past_team_dict.get(t_id, 0) > 0:
+                                    violation_count += 1
                 else:
                     # 従来通り、学校（グループ）単位で重複チェック
                     past_dict = assigned_schools[staff_id].get(section_id, {})
                     for sch in involved_schools:
-                        if allow_reversed_past:
-                            if sch == aff_school_id and past_dict.get((sch, "aff"), 0) > 0:
-                                violation_count += 1
-                            if sch == neg_school_id and past_dict.get((sch, "neg"), 0) > 0:
-                                violation_count += 1
+                        if allow_pre_main_diff:
+                            if allow_reversed_past:
+                                if sch == aff_school_id and past_dict.get((sch, "aff", current_is_pre), 0) > 0:
+                                    violation_count += 1
+                                if sch == neg_school_id and past_dict.get((sch, "neg", current_is_pre), 0) > 0:
+                                    violation_count += 1
+                            else:
+                                if past_dict.get((sch, current_is_pre), 0) > 0:
+                                    violation_count += 1
                         else:
-                            if past_dict.get(sch, 0) > 0:
-                                violation_count += 1
+                            if allow_reversed_past:
+                                if sch == aff_school_id and past_dict.get((sch, "aff"), 0) > 0:
+                                    violation_count += 1
+                                if sch == neg_school_id and past_dict.get((sch, "neg"), 0) > 0:
+                                    violation_count += 1
+                            else:
+                                if past_dict.get(sch, 0) > 0:
+                                    violation_count += 1
                             
         return True, violation_count
 
@@ -219,6 +254,7 @@ def assign_judges(
         match = work_matches[match_idx]
         seg_id = match.get("event_timetable_segment_id")
         section_id = match.get("event_section_id")
+        is_pre = bool(match.get("is_pre_round"))
         aff_team_id = match.get("aff_team_id")
         neg_team_id = match.get("neg_team_id")
         aff_school_id = team_school_map.get(aff_team_id) if aff_team_id else None
@@ -231,20 +267,32 @@ def assign_judges(
         if section_id is not None:
             # 学校
             if aff_school_id:
-                k = (aff_school_id, "aff") if allow_reversed_past else aff_school_id
+                if allow_pre_main_diff:
+                    k = (aff_school_id, "aff", is_pre) if allow_reversed_past else (aff_school_id, is_pre)
+                else:
+                    k = (aff_school_id, "aff") if allow_reversed_past else aff_school_id
                 d = assigned_schools[staff_id].setdefault(section_id, {})
                 d[k] = d.get(k, 0) + 1
             if neg_school_id:
-                k = (neg_school_id, "neg") if allow_reversed_past else neg_school_id
+                if allow_pre_main_diff:
+                    k = (neg_school_id, "neg", is_pre) if allow_reversed_past else (neg_school_id, is_pre)
+                else:
+                    k = (neg_school_id, "neg") if allow_reversed_past else neg_school_id
                 d = assigned_schools[staff_id].setdefault(section_id, {})
                 d[k] = d.get(k, 0) + 1
             # チーム
             if aff_team_id:
-                k = (aff_team_id, "aff") if allow_reversed_past else aff_team_id
+                if allow_pre_main_diff:
+                    k = (aff_team_id, "aff", is_pre) if allow_reversed_past else (aff_team_id, is_pre)
+                else:
+                    k = (aff_team_id, "aff") if allow_reversed_past else aff_team_id
                 d = assigned_teams[staff_id].setdefault(section_id, {})
                 d[k] = d.get(k, 0) + 1
             if neg_team_id:
-                k = (neg_team_id, "neg") if allow_reversed_past else neg_team_id
+                if allow_pre_main_diff:
+                    k = (neg_team_id, "neg", is_pre) if allow_reversed_past else (neg_team_id, is_pre)
+                else:
+                    k = (neg_team_id, "neg") if allow_reversed_past else neg_team_id
                 d = assigned_teams[staff_id].setdefault(section_id, {})
                 d[k] = d.get(k, 0) + 1
 
@@ -252,6 +300,7 @@ def assign_judges(
         match = work_matches[match_idx]
         seg_id = match.get("event_timetable_segment_id")
         section_id = match.get("event_section_id")
+        is_pre = bool(match.get("is_pre_round"))
         aff_team_id = match.get("aff_team_id")
         neg_team_id = match.get("neg_team_id")
         aff_school_id = team_school_map.get(aff_team_id) if aff_team_id else None
@@ -264,14 +313,20 @@ def assign_judges(
         if section_id is not None:
             # 学校
             if aff_school_id:
-                k = (aff_school_id, "aff") if allow_reversed_past else aff_school_id
+                if allow_pre_main_diff:
+                    k = (aff_school_id, "aff", is_pre) if allow_reversed_past else (aff_school_id, is_pre)
+                else:
+                    k = (aff_school_id, "aff") if allow_reversed_past else aff_school_id
                 d = assigned_schools[staff_id].setdefault(section_id, {})
                 if k in d:
                     d[k] -= 1
                     if d[k] <= 0:
                         del d[k]
             if neg_school_id:
-                k = (neg_school_id, "neg") if allow_reversed_past else neg_school_id
+                if allow_pre_main_diff:
+                    k = (neg_school_id, "neg", is_pre) if allow_reversed_past else (neg_school_id, is_pre)
+                else:
+                    k = (neg_school_id, "neg") if allow_reversed_past else neg_school_id
                 d = assigned_schools[staff_id].setdefault(section_id, {})
                 if k in d:
                     d[k] -= 1
@@ -279,14 +334,20 @@ def assign_judges(
                         del d[k]
             # チーム
             if aff_team_id:
-                k = (aff_team_id, "aff") if allow_reversed_past else aff_team_id
+                if allow_pre_main_diff:
+                    k = (aff_team_id, "aff", is_pre) if allow_reversed_past else (aff_team_id, is_pre)
+                else:
+                    k = (aff_team_id, "aff") if allow_reversed_past else aff_team_id
                 d = assigned_teams[staff_id].setdefault(section_id, {})
                 if k in d:
                     d[k] -= 1
                     if d[k] <= 0:
                         del d[k]
             if neg_team_id:
-                k = (neg_team_id, "neg") if allow_reversed_past else neg_team_id
+                if allow_pre_main_diff:
+                    k = (neg_team_id, "neg", is_pre) if allow_reversed_past else (neg_team_id, is_pre)
+                else:
+                    k = (neg_team_id, "neg") if allow_reversed_past else neg_team_id
                 d = assigned_teams[staff_id].setdefault(section_id, {})
                 if k in d:
                     d[k] -= 1
