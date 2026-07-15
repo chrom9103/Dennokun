@@ -16,7 +16,7 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/Table";
-import TsvImportButton from "@/components/elements/TsvImportButton";
+import CsvImportButton from "@/components/elements/CsvImportButton";
 import {
   School,
   fetchSchools,
@@ -160,11 +160,19 @@ export default function SchoolsPage() {
     if (!eventId) return;
     setIsImporting(true);
     try {
-      // TSV format: orderNumber, name, nameAliases
       let created = 0;
-      for (const row of rows) {
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
         if (row.length < 2) continue;
-        const [orderStr, name, aliasesStr] = row;
+
+        // Skip header row if present
+        if (i === 0 && (row[0] === "orderNumber" || row[1] === "name")) {
+          continue;
+        }
+
+        const [orderStr, name, aliasesStr, note] = row;
+        if (!name || !name.trim()) continue;
+
         const aliases = aliasesStr
           ? aliasesStr.split("|").map((a) => a.trim()).filter(Boolean)
           : [];
@@ -172,6 +180,7 @@ export default function SchoolsPage() {
           name: name.trim(),
           order_number: orderStr ? parseInt(orderStr) : null,
           name_aliases: aliases,
+          note: note?.trim() || null,
         });
         created++;
       }
@@ -207,7 +216,7 @@ export default function SchoolsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <TsvImportButton onImport={handleImport} isLoading={isImporting} />
+          <CsvImportButton onImport={handleImport} isLoading={isImporting} />
           <Button icon="add" onClick={openCreate}>学校追加</Button>
         </div>
       </div>
