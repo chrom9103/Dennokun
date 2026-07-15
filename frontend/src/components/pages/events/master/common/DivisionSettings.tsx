@@ -5,6 +5,7 @@ import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
 import Input from "@/components/ui/Input";
 import Modal from "@/components/ui/Modal";
+import CsvImportButton from "@/components/elements/CsvImportButton";
 import {
   Table,
   TableHeader,
@@ -47,6 +48,40 @@ export default function DivisionSettings({ eventId }: DivisionSettingsProps) {
   // Delete confirm state
   const [deleteTarget, setDeleteTarget] = useState<Section | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Import state
+  const [isImporting, setIsImporting] = useState(false);
+
+  const handleImport = async (rows: string[][]) => {
+    setIsImporting(true);
+    try {
+      let created = 0;
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (row.length < 2) continue;
+
+        // Skip header
+        if (i === 0 && (row[0] === "orderNumber" || row[1] === "name")) {
+          continue;
+        }
+
+        const [orderStr, name] = row;
+        if (!name || !name.trim()) continue;
+
+        await createSection(eventId, {
+          name: name.trim(),
+          order_number: orderStr ? parseInt(orderStr) : null,
+        });
+        created++;
+      }
+      await load();
+      alert(`${created}件の部門データをインポートしました`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "インポートに失敗しました");
+    } finally {
+      setIsImporting(false);
+    }
+  };
 
   useEffect(() => {
     load();
@@ -129,9 +164,12 @@ export default function DivisionSettings({ eventId }: DivisionSettingsProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium text-foreground">部門一覧</h3>
-        <Button icon="add" size="sm" onClick={openCreate}>
-          部門追加
-        </Button>
+        <div className="flex gap-2">
+          <CsvImportButton onImport={handleImport} isLoading={isImporting} />
+          <Button icon="add" size="sm" onClick={openCreate}>
+            部門追加
+          </Button>
+        </div>
       </div>
 
       {error && (
