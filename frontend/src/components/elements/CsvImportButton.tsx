@@ -9,48 +9,56 @@ interface CsvImportButtonProps {
   label?: string;
 }
 
-function parseCsv(text: string): string[][] {
-  const result: string[][] = [];
+export function parseCSV(text: string): string[][] {
+  const lines: string[][] = [];
   let row: string[] = [];
-  let current = "";
-  let insideQuotes = false;
+  let inQuotes = false;
+  let currentValue = "";
 
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
     const nextChar = text[i + 1];
 
-    if (char === '"') {
-      if (insideQuotes && nextChar === '"') {
-        // Escaped quote: double quote inside quotes represents a single quote
-        current += '"';
-        i++; // skip next quote
+    if (inQuotes) {
+      if (char === '"') {
+        if (nextChar === '"') {
+          currentValue += '"';
+          i++; // Skip next quote
+        } else {
+          inQuotes = false;
+        }
       } else {
-        // Toggle quote state
-        insideQuotes = !insideQuotes;
+        currentValue += char;
       }
-    } else if (char === ',' && !insideQuotes) {
-      row.push(current);
-      current = "";
-    } else if ((char === '\r' || char === '\n') && !insideQuotes) {
-      if (char === '\r' && nextChar === '\n') {
-        i++; // skip \n
-      }
-      row.push(current);
-      result.push(row);
-      row = [];
-      current = "";
     } else {
-      current += char;
+      if (char === '"') {
+        inQuotes = true;
+      } else if (char === ',') {
+        row.push(currentValue);
+        currentValue = "";
+      } else if (char === '\r' || char === '\n') {
+        row.push(currentValue);
+        currentValue = "";
+        // Only push row if it contains some data
+        if (row.some(val => val.trim().length > 0) || row.length > 1) {
+          lines.push(row);
+        }
+        row = [];
+        if (char === '\r' && nextChar === '\n') {
+          i++; // Skip \n
+        }
+      } else {
+        currentValue += char;
+      }
     }
   }
-
-  // Push remaining elements if any
-  if (row.length > 0 || current !== "") {
-    row.push(current);
-    result.push(row);
+  if (currentValue || row.length > 0) {
+    row.push(currentValue);
+    if (row.some(val => val.trim().length > 0) || row.length > 1) {
+      lines.push(row);
+    }
   }
-
-  return result;
+  return lines;
 }
 
 export default function CsvImportButton({
@@ -67,7 +75,7 @@ export default function CsvImportButton({
     const reader = new FileReader();
     reader.onload = (event) => {
       const content = event.target?.result as string;
-      const rows = parseCsv(content);
+      const rows = parseCSV(content);
       onImport(rows);
       // Reset input
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -80,7 +88,7 @@ export default function CsvImportButton({
       <input
         ref={fileInputRef}
         type="file"
-        accept=".csv"
+        accept=".csv,.txt"
         className="hidden"
         onChange={handleFileChange}
         disabled={isLoading}

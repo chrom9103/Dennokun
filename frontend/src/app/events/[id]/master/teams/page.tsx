@@ -11,7 +11,7 @@ import Modal from "@/components/ui/Modal";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/Table";
-import TsvImportButton from "@/components/elements/TsvImportButton";
+import CsvImportButton from "@/components/elements/CsvImportButton";
 import {
   Team, TeamCreate, fetchTeams, createTeam, updateTeam, deleteTeam,
   Section, fetchSections,
@@ -205,9 +205,18 @@ export default function TeamsPage() {
     setIsImporting(true);
     try {
       let count = 0;
-      for (const row of rows) {
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
         if (row.length < 2) continue;
-        const [orderStr, name, schoolName, sectionName, groupName] = row;
+
+        // Skip header row if present
+        if (i === 0 && (row[0] === "orderOfApplication" || row[1] === "name")) {
+          continue;
+        }
+
+        const [orderStr, name, schoolName, sectionName, isSeedStr, note, groupName] = row;
+        if (!name || !name.trim()) continue;
+
         const school = schools.find((s) => s.name === schoolName?.trim());
         const section = sections.find((s) => s.name === sectionName?.trim());
         let group = groups.find((g) => g.name === groupName?.trim());
@@ -221,6 +230,8 @@ export default function TeamsPage() {
           event_school_id: school?.id ?? null,
           event_section_id: section?.id ?? null,
           team_group_id: group?.id ?? null,
+          is_seed: isSeedStr === "1" || isSeedStr === "true",
+          note: note?.trim() || null,
         });
         count++;
       }
@@ -247,7 +258,7 @@ export default function TeamsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <TsvImportButton onImport={handleImport} isLoading={isImporting} />
+          <CsvImportButton onImport={handleImport} isLoading={isImporting} />
           <Button icon="group_add" onClick={openCreate}>チーム追加</Button>
         </div>
       </div>
