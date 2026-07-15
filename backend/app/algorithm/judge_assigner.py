@@ -96,7 +96,8 @@ def assign_judges(
 
     for idx, orig_m in enumerate(sorted_matches_temp):
         m = dict(orig_m)
-        if m.get("is_staffs_fixed"):
+        pairing_decided = (m.get("aff_team_id") is not None) and (m.get("neg_team_id") is not None)
+        if m.get("is_staffs_fixed") or not pairing_decided:
             work_matches.append(m)
         else:
             m["main_judge_staff_id"] = None
@@ -120,7 +121,8 @@ def assign_judges(
 
     # 確定済みの試合をアサイン状態テーブルに事前反映
     for idx, m in enumerate(work_matches):
-        if m.get("is_staffs_fixed"):
+        pairing_decided = (m.get("aff_team_id") is not None) and (m.get("neg_team_id") is not None)
+        if m.get("is_staffs_fixed") or not pairing_decided:
             seg_id = m.get("event_timetable_segment_id")
             section_id = m.get("event_section_id")
             is_pre = bool(m.get("is_pre_round"))
@@ -411,7 +413,8 @@ def assign_judges(
                 
                 # アサイン人数の設定
                 for m in ordered:
-                    if not m.get("is_staffs_fixed"):
+                    pairing_decided = (m.get("aff_team_id") is not None) and (m.get("neg_team_id") is not None)
+                    if not m.get("is_staffs_fixed") and pairing_decided:
                         c = 0
                         for r in ["main_judge_staff_id", "sub_judge1_staff_id", "sub_judge2_staff_id", "sub_judge3_staff_id", "sub_judge4_staff_id"]:
                             if m.get(r):
