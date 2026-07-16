@@ -942,6 +942,15 @@ export default function ControlPage() {
           </div>
         </div>
       );
+    } else if (expectedJudgeCount === 4) {
+      return (
+        <div className="grid grid-cols-2 gap-1.5">
+          {renderSlot(m, 'main', '主', segmentStaffAssignments, seg)}
+          {renderSlot(m, 'sub1', '副', segmentStaffAssignments, seg)}
+          {renderSlot(m, 'sub2', '副', segmentStaffAssignments, seg)}
+          {renderSlot(m, 'sub3', '副', segmentStaffAssignments, seg)}
+        </div>
+      );
     } else {
       return (
         <div className="flex flex-col gap-1.5 items-start">
@@ -953,7 +962,7 @@ export default function ControlPage() {
           <div className="grid grid-cols-2 gap-1.5">
             {renderSlot(m, 'sub1', '副', segmentStaffAssignments, seg)}
             {renderSlot(m, 'sub2', '副', segmentStaffAssignments, seg)}
-            {expectedJudgeCount >= 4 && renderSlot(m, 'sub3', '副', segmentStaffAssignments, seg)}
+            {renderSlot(m, 'sub3', '副', segmentStaffAssignments, seg)}
             {expectedJudgeCount >= 5 && renderSlot(m, 'sub4', '副', segmentStaffAssignments, seg)}
           </div>
         </div>
