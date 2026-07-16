@@ -660,13 +660,10 @@ export default function FinalResultsPage() {
               <Icon name="info" size={18} />
               <p>
                 「予選」フラグが OFF のタイムテーブルセグメントに属する試合が表示されます。
-                各カードの「結果を入力・編集」から直接スコアを入力できます。
               </p>
             </div>
             <TournamentTree
-              eventId={eventId}
               matches={mainRoundMatches}
-              onResultSaved={load}
             />
           </div>
         )}
