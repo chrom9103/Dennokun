@@ -137,7 +137,7 @@ function buildNavItems(eventId?: string): NavItem[] {
       path: `/events/${eventId}/reports`,
       icon: "assessment",
       children: [
-        { title: "順位表", path: `/events/${eventId}/reports/standings`, icon: "bar_chart" },
+        { title: "予選順位表", path: `/events/${eventId}/reports/standings`, icon: "bar_chart" },
         { title: "最終結果", path: `/events/${eventId}/reports/final-results`, icon: "emoji_events" },
       ],
     },

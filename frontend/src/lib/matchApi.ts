@@ -190,8 +190,9 @@ export async function fetchStandings(eventId: number, round?: string): Promise<S
   return apiFetch(`/api/events/${eventId}/standings${query}`);
 }
 
-export async function fetchMatchSummary(eventId: number): Promise<MatchSummary> {
-  return apiFetch(`/api/events/${eventId}/match-summary`);
+export async function fetchMatchSummary(eventId: number, round?: string): Promise<MatchSummary> {
+  const query = round ? `?round=${round}` : "";
+  return apiFetch(`/api/events/${eventId}/match-summary${query}`);
 }
 
 export async function saveFinalStandings(

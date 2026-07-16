@@ -23,10 +23,13 @@ async def get_pre_round_standings(event_id: int) -> List[dict]:
                     COALESCE(m.aff_comm_sum, 0) AS comm_sum,
                     COALESCE(m.aff_manner, 0) AS manner
                 FROM event_matches m
+                JOIN event_timetable_segments seg ON seg.id = m.event_timetable_segment_id
                 WHERE m.event_id = $1
                   AND m.deleted_at IS NULL
                   AND m.aff_team_id IS NOT NULL
                   AND m.is_result_confirmed = TRUE
+                  AND seg.is_pre_round = TRUE
+                  AND seg.deleted_at IS NULL
                 UNION ALL
                 -- 否定側としての結果
                 SELECT
@@ -38,10 +41,13 @@ async def get_pre_round_standings(event_id: int) -> List[dict]:
                     COALESCE(m.neg_comm_sum, 0) AS comm_sum,
                     COALESCE(m.neg_manner, 0) AS manner
                 FROM event_matches m
+                JOIN event_timetable_segments seg ON seg.id = m.event_timetable_segment_id
                 WHERE m.event_id = $1
                   AND m.deleted_at IS NULL
                   AND m.neg_team_id IS NOT NULL
                   AND m.is_result_confirmed = TRUE
+                  AND seg.is_pre_round = TRUE
+                  AND seg.deleted_at IS NULL
             ),
             team_stats AS (
                 SELECT
@@ -238,20 +244,43 @@ async def get_all_standings(event_id: int) -> List[dict]:
         await conn.close()
 
 
-async def get_event_match_summary(event_id: int) -> dict:
+async def get_event_match_summary(event_id: int, round: str = "pre") -> dict:
     """試合の全体サマリー（総数・確定済み・未完了）を返す。"""
     from app.core.db import get_db_connection
     conn = await get_db_connection()
     try:
-        row = await conn.fetchrow(
-            """SELECT
-                COUNT(*) AS total,
-                COUNT(*) FILTER (WHERE is_result_confirmed = TRUE) AS confirmed,
-                COUNT(*) FILTER (WHERE aff_team_id IS NOT NULL AND neg_team_id IS NOT NULL) AS scheduled
-               FROM event_matches
-               WHERE event_id = $1 AND deleted_at IS NULL""",
-            event_id,
-        )
+        if round == "pre":
+            row = await conn.fetchrow(
+                """SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE m.is_result_confirmed = TRUE) AS confirmed,
+                    COUNT(*) FILTER (WHERE m.aff_team_id IS NOT NULL AND m.neg_team_id IS NOT NULL) AS scheduled
+                   FROM event_matches m
+                   JOIN event_timetable_segments seg ON seg.id = m.event_timetable_segment_id
+                   WHERE m.event_id = $1 AND m.deleted_at IS NULL AND seg.is_pre_round = TRUE AND seg.deleted_at IS NULL""",
+                event_id,
+            )
+        elif round == "main":
+            row = await conn.fetchrow(
+                """SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE m.is_result_confirmed = TRUE) AS confirmed,
+                    COUNT(*) FILTER (WHERE m.aff_team_id IS NOT NULL AND m.neg_team_id IS NOT NULL) AS scheduled
+                   FROM event_matches m
+                   JOIN event_timetable_segments seg ON seg.id = m.event_timetable_segment_id
+                   WHERE m.event_id = $1 AND m.deleted_at IS NULL AND seg.is_pre_round = FALSE AND seg.deleted_at IS NULL""",
+                event_id,
+            )
+        else:
+            row = await conn.fetchrow(
+                """SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE is_result_confirmed = TRUE) AS confirmed,
+                    COUNT(*) FILTER (WHERE aff_team_id IS NOT NULL AND neg_team_id IS NOT NULL) AS scheduled
+                   FROM event_matches
+                   WHERE event_id = $1 AND deleted_at IS NULL""",
+                event_id,
+            )
         return dict(row) if row else {"total": 0, "confirmed": 0, "scheduled": 0}
     finally:
         await conn.close()
