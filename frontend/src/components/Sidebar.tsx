@@ -21,12 +21,14 @@ interface NavItem {
 function SidebarItem({
   item,
   active,
+  currentPath,
   open,
   onToggle,
   onClose,
 }: {
   item: NavItem;
   active: boolean;
+  currentPath?: string;
   open?: boolean;
   onToggle?: () => void;
   onClose: () => void;
@@ -61,7 +63,8 @@ function SidebarItem({
               <SidebarItem
                 key={child.path}
                 item={child}
-                active={false} // Logic handled by parent check for depth 1, or can be improved
+                active={currentPath === child.path}
+                currentPath={currentPath}
                 onClose={onClose}
               />
             ))}
@@ -116,6 +119,7 @@ function buildNavItems(eventId?: string): NavItem[] {
         { title: "参加校管理", path: `/events/${eventId}/master/schools`, icon: "school" },
         { title: "チーム管理", path: `/events/${eventId}/master/teams`, icon: "groups" },
         { title: "スタッフ管理", path: `/events/${eventId}/master/staffs`, icon: "admin_panel_settings" },
+        { title: "全データ管理", path: `/events/${eventId}/master/all`, icon: "storage" },
       ],
     },
     {
@@ -189,6 +193,7 @@ export default function Sidebar({
                 key={item.title}
                 item={item}
                 active={isParentActive(item.path)}
+                currentPath={pathname}
                 open={openSections[item.title]}
                 onToggle={() => toggleSection(item.title)}
                 onClose={onMobileClose}
@@ -200,6 +205,7 @@ export default function Sidebar({
               key={item.path}
               item={item}
               active={isActive(item.path)}
+              currentPath={pathname}
               onClose={onMobileClose}
             />
           );
