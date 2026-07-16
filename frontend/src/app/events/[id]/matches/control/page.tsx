@@ -928,28 +928,37 @@ export default function ControlPage() {
     const segId = m.event_timetable_segment_id;
     const expectedJudgeCount = (segId !== null ? segmentJudgeCounts[segId] : null) ?? (m.judges_assignment_count || 3);
 
-    const elements = [];
-    if (expectedJudgeCount >= 1) {
-      elements.push(renderSlot(m, 'main', '主', segmentStaffAssignments, seg));
+    if (expectedJudgeCount <= 3) {
+      return (
+        <div className="flex gap-1.5 items-start">
+          {/* Left side: Main judge */}
+          <div>
+            {renderSlot(m, 'main', '主', segmentStaffAssignments, seg)}
+          </div>
+          {/* Right side: Sub judges stacked vertically */}
+          <div className="flex flex-col gap-1.5">
+            {expectedJudgeCount >= 2 && renderSlot(m, 'sub1', '副', segmentStaffAssignments, seg)}
+            {expectedJudgeCount >= 3 && renderSlot(m, 'sub2', '副', segmentStaffAssignments, seg)}
+          </div>
+        </div>
+      );
+    } else {
+      return (
+        <div className="flex flex-col gap-1.5 items-start">
+          {/* Top: Main judge */}
+          <div>
+            {renderSlot(m, 'main', '主', segmentStaffAssignments, seg)}
+          </div>
+          {/* Bottom: 2x2 grid for sub judges */}
+          <div className="grid grid-cols-2 gap-1.5">
+            {renderSlot(m, 'sub1', '副', segmentStaffAssignments, seg)}
+            {renderSlot(m, 'sub2', '副', segmentStaffAssignments, seg)}
+            {expectedJudgeCount >= 4 && renderSlot(m, 'sub3', '副', segmentStaffAssignments, seg)}
+            {expectedJudgeCount >= 5 && renderSlot(m, 'sub4', '副', segmentStaffAssignments, seg)}
+          </div>
+        </div>
+      );
     }
-    if (expectedJudgeCount >= 2) {
-      elements.push(renderSlot(m, 'sub1', '副', segmentStaffAssignments, seg));
-    }
-    if (expectedJudgeCount >= 3) {
-      elements.push(renderSlot(m, 'sub2', '副', segmentStaffAssignments, seg));
-    }
-    if (expectedJudgeCount >= 4) {
-      elements.push(renderSlot(m, 'sub3', '副', segmentStaffAssignments, seg));
-    }
-    if (expectedJudgeCount >= 5) {
-      elements.push(renderSlot(m, 'sub4', '副', segmentStaffAssignments, seg));
-    }
-
-    return (
-      <div className="grid grid-cols-2 gap-1.5 w-fit">
-        {elements}
-      </div>
-    );
   };
 
   const judgeStaffs = staffs.filter((s) => s.can_be_main_judge || s.can_be_sub_judge);
