@@ -50,8 +50,8 @@ export default function StandingsPage() {
       setLoading(true);
       setError(null);
       const [standingsData, summaryData] = await Promise.all([
-        fetchStandings(eventId),
-        fetchMatchSummary(eventId),
+        fetchStandings(eventId, "pre"),
+        fetchMatchSummary(eventId, "pre"),
       ]);
       setStandings(standingsData);
       setSummary(summaryData);
@@ -141,7 +141,7 @@ export default function StandingsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `standings_${eventId}.csv`;
+    a.download = `pre_round_standings_${eventId}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -156,9 +156,9 @@ export default function StandingsPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">順位表</h1>
+          <h1 className="text-2xl font-bold">予選順位表</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            現在の対戦結果に基づいたリアルタイムの順位を表示します。
+            現在の予選の対戦結果に基づいたリアルタイムの順位を表示します。
           </p>
         </div>
         <div className="flex gap-2">

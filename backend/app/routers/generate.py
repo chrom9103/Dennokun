@@ -154,10 +154,37 @@ async def update_match_assignment(event_id: int, match_id: int, data: MatchAssig
     """試合のチーム・会場・時間枠・ジャッジを個別に変更する（微調整）。"""
     try:
         from app.core.handle_db.generate import update_match_assignment as _update
-        match = await _update(match_id=match_id, **data.dict(exclude_none=True))
-        if not match or match["event_id"] != event_id:
-            raise HTTPException(status_code=404, detail="Match not found")
-        return match
+        # If match_id < 0, it means it's a virtual placeholder. We should insert/create a new match!
+        if match_id < 0:
+            from app.core.handle_db.generate import bulk_insert_matches
+            match_dict = {
+                "event_timetable_segment_id": data.event_timetable_segment_id,
+                "event_room_id": data.event_room_id,
+                "event_section_id": data.event_section_id,
+                "aff_team_id": data.aff_team_id,
+                "neg_team_id": data.neg_team_id,
+                "main_judge_staff_id": data.main_judge_staff_id,
+                "sub_judge1_staff_id": data.sub_judge1_staff_id,
+                "sub_judge2_staff_id": data.sub_judge2_staff_id,
+                "sub_judge3_staff_id": data.sub_judge3_staff_id,
+                "sub_judge4_staff_id": data.sub_judge4_staff_id,
+                "timekeeper_staff_id": data.timekeeper_staff_id,
+                "order_number_in_segment": data.order_number_in_segment or 1,
+            }
+            inserted_matches = await bulk_insert_matches(event_id, [match_dict])
+            if not inserted_matches:
+                raise HTTPException(status_code=500, detail="Failed to create match")
+            
+            from app.core.handle_db.matches import get_match_by_id
+            match = await get_match_by_id(inserted_matches[0]["id"])
+            if not match or match["event_id"] != event_id:
+                raise HTTPException(status_code=404, detail="Match not found")
+            return match
+        else:
+            match = await _update(match_id=match_id, **data.dict(exclude_none=True))
+            if not match or match["event_id"] != event_id:
+                raise HTTPException(status_code=404, detail="Match not found")
+            return match
     except HTTPException:
         raise
     except Exception as e:
@@ -205,6 +232,7 @@ async def assign_judges_endpoint(event_id: int, req: AssignJudgesRequest):
             judges_per_match=req.segment_judge_counts,
             allow_reversed_past=req.allow_reversed_past,
             allow_same_group_diff_team=req.allow_same_group_diff_team,
+            allow_diff_day=req.allow_diff_day,
         )
 
         # 更新を保存

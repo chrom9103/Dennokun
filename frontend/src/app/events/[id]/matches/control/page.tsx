@@ -38,6 +38,8 @@ interface EditForm {
   sub_judge3_staff_id: string;
   sub_judge4_staff_id: string;
   timekeeper_staff_id: string;
+  event_section_id?: string;
+  order_number_in_segment?: number;
 }
 
 export default function ControlPage() {
@@ -92,6 +94,7 @@ export default function ControlPage() {
   const [fSection, setFSection] = useState("all");
   const [allowReversedPast, setAllowReversedPast] = useState(false);
   const [allowSameGroupDiffTeam, setAllowSameGroupDiffTeam] = useState(false);
+  const [allowDiffDay, setAllowDiffDay] = useState(false);
   const [unassignedStaffSegId, setUnassignedStaffSegId] = useState<number | null>(null);
 
   // Scroll Restorer to prevent page jumping during silent updates
@@ -345,7 +348,7 @@ export default function ControlPage() {
     setJudgeResult(null);
     setError(null);
     try {
-      const result = await assignJudges(eventId, segmentJudgeCounts, allowReversedPast, allowSameGroupDiffTeam);
+      const result = await assignJudges(eventId, segmentJudgeCounts, allowReversedPast, allowSameGroupDiffTeam, allowDiffDay);
       setJudgeResult(result);
       await load();
     } catch (e) {
@@ -383,6 +386,8 @@ export default function ControlPage() {
       sub_judge3_staff_id: m.sub_judge3_staff_id != null ? String(m.sub_judge3_staff_id) : "",
       sub_judge4_staff_id: m.sub_judge4_staff_id != null ? String(m.sub_judge4_staff_id) : "",
       timekeeper_staff_id: m.timekeeper_staff_id != null ? String(m.timekeeper_staff_id) : "",
+      event_section_id: m.event_section_id != null ? String(m.event_section_id) : "",
+      order_number_in_segment: m.order_number_in_segment ?? 1,
     });
   }
 
@@ -406,6 +411,8 @@ export default function ControlPage() {
       if (editForm.sub_judge3_staff_id) update.sub_judge3_staff_id = parseInt(editForm.sub_judge3_staff_id);
       if (editForm.sub_judge4_staff_id) update.sub_judge4_staff_id = parseInt(editForm.sub_judge4_staff_id);
       if (editForm.timekeeper_staff_id) update.timekeeper_staff_id = parseInt(editForm.timekeeper_staff_id);
+      if (editForm.event_section_id) update.event_section_id = parseInt(editForm.event_section_id);
+      if (editForm.order_number_in_segment) update.order_number_in_segment = editForm.order_number_in_segment;
 
       await updateMatchAssignment(eventId, editForm.matchId, update);
       setEditForm(null);
@@ -641,45 +648,104 @@ export default function ControlPage() {
       }
       return a.id - b.id;
     });
+
     const currentSegIdx = sortedSegments.findIndex((s) => s.id === match.event_timetable_segment_id);
     if (currentSegIdx <= 0) return false;
 
-    const pastSegments = sortedSegments.slice(0, currentSegIdx);
+    // 日付グループ(dayIndex)の計算
+    const dayMap = new Map<number, number>();
+    let dayIndex = 0;
+    let prevTime: string | null = null;
+    for (const seg of sortedSegments) {
+      if (seg.start_time && prevTime && seg.start_time < prevTime) {
+        dayIndex++;
+      }
+      dayMap.set(seg.id, dayIndex);
+      if (seg.start_time) {
+        prevTime = seg.start_time;
+      }
+    }
+
+    const currentDay = match.event_timetable_segment_id != null ? (dayMap.get(match.event_timetable_segment_id) ?? 0) : 0;
+
+    // pastSegments のフィルタリング
+    const pastSegments = sortedSegments.slice(0, currentSegIdx).filter((s) => {
+      if (allowDiffDay) {
+        // 日別区別フラグが有効な場合、同じ日付の過去セグメントのみを対象とする
+        return dayMap.get(s.id) === currentDay;
+      }
+      return true;
+    });
+
     const pastSegmentIds = new Set(pastSegments.map((s) => s.id));
     const pastMatches = matches.filter((pastM) => pastM.event_timetable_segment_id !== null && pastSegmentIds.has(pastM.event_timetable_segment_id));
 
-    const seenSchoolsAsAff = new Set<number>();
-    const seenSchoolsAsNeg = new Set<number>();
+    if (allowSameGroupDiffTeam) {
+      // チーム単位で重複チェック
+      const seenTeamsAsAff = new Set<number>();
+      const seenTeamsAsNeg = new Set<number>();
 
-    pastMatches.forEach((pastM) => {
-      const isAssigned = (
-        pastM.main_judge_staff_id === staffId ||
-        pastM.sub_judge1_staff_id === staffId ||
-        pastM.sub_judge2_staff_id === staffId ||
-        pastM.sub_judge3_staff_id === staffId ||
-        pastM.sub_judge4_staff_id === staffId ||
-        pastM.timekeeper_staff_id === staffId
-      );
-      if (isAssigned && pastM.event_section_id === match.event_section_id) {
-        const pastAffTeam = teams.find((t) => t.id === pastM.aff_team_id);
-        const pastNegTeam = teams.find((t) => t.id === pastM.neg_team_id);
-        if (pastAffTeam?.event_school_id) seenSchoolsAsAff.add(pastAffTeam.event_school_id);
-        if (pastNegTeam?.event_school_id) seenSchoolsAsNeg.add(pastNegTeam.event_school_id);
+      pastMatches.forEach((pastM) => {
+        const isAssigned = (
+          pastM.main_judge_staff_id === staffId ||
+          pastM.sub_judge1_staff_id === staffId ||
+          pastM.sub_judge2_staff_id === staffId ||
+          pastM.sub_judge3_staff_id === staffId ||
+          pastM.sub_judge4_staff_id === staffId ||
+          pastM.timekeeper_staff_id === staffId
+        );
+        if (isAssigned && pastM.event_section_id === match.event_section_id) {
+          if (pastM.aff_team_id) seenTeamsAsAff.add(pastM.aff_team_id);
+          if (pastM.neg_team_id) seenTeamsAsNeg.add(pastM.neg_team_id);
+        }
+      });
+
+      if (allowReversedPast) {
+        const hasAffConflict = match.aff_team_id && seenTeamsAsAff.has(match.aff_team_id);
+        const hasNegConflict = match.neg_team_id && seenTeamsAsNeg.has(match.neg_team_id);
+        return !!(hasAffConflict || hasNegConflict);
+      } else {
+        const allSeenTeams = new Set([...seenTeamsAsAff, ...seenTeamsAsNeg]);
+        return !!(
+          (match.aff_team_id && allSeenTeams.has(match.aff_team_id)) ||
+          (match.neg_team_id && allSeenTeams.has(match.neg_team_id))
+        );
       }
-    });
-
-    if (allowReversedPast) {
-      const hasAffConflict = affSchoolId && seenSchoolsAsAff.has(affSchoolId);
-      const hasNegConflict = negSchoolId && seenSchoolsAsNeg.has(negSchoolId);
-      return !!(hasAffConflict || hasNegConflict);
     } else {
-      const allSeenSchools = new Set([...seenSchoolsAsAff, ...seenSchoolsAsNeg]);
-      return !!(
-        (affSchoolId && allSeenSchools.has(affSchoolId)) ||
-        (negSchoolId && allSeenSchools.has(negSchoolId))
-      );
+      // 学校単位で重複チェック
+      const seenSchoolsAsAff = new Set<number>();
+      const seenSchoolsAsNeg = new Set<number>();
+
+      pastMatches.forEach((pastM) => {
+        const isAssigned = (
+          pastM.main_judge_staff_id === staffId ||
+          pastM.sub_judge1_staff_id === staffId ||
+          pastM.sub_judge2_staff_id === staffId ||
+          pastM.sub_judge3_staff_id === staffId ||
+          pastM.sub_judge4_staff_id === staffId ||
+          pastM.timekeeper_staff_id === staffId
+        );
+        if (isAssigned && pastM.event_section_id === match.event_section_id) {
+          const pastAffTeam = teams.find((t) => t.id === pastM.aff_team_id);
+          const pastNegTeam = teams.find((t) => t.id === pastM.neg_team_id);
+          if (pastAffTeam?.event_school_id) seenSchoolsAsAff.add(pastAffTeam.event_school_id);
+          if (pastNegTeam?.event_school_id) seenSchoolsAsNeg.add(pastNegTeam.event_school_id);
+        }
+      });
+
+      if (allowReversedPast) {
+        const hasAffConflict = affSchoolId && seenSchoolsAsAff.has(affSchoolId);
+        const hasNegConflict = negSchoolId && seenSchoolsAsNeg.has(negSchoolId);
+        return !!(hasAffConflict || hasNegConflict);
+      } else {
+        const allSeenSchools = new Set([...seenSchoolsAsAff, ...seenSchoolsAsNeg]);
+        return !!(
+          (affSchoolId && allSeenSchools.has(affSchoolId)) ||
+          (negSchoolId && allSeenSchools.has(negSchoolId))
+        );
+      }
     }
-  }, [teams, segments, matches, allowReversedPast]);
+  }, [teams, segments, matches, allowReversedPast, allowSameGroupDiffTeam, allowDiffDay]);
 
   const getSortedCandidates = (match: MatchListItem, role: 'main' | 'sub1' | 'sub2' | 'sub3' | 'sub4' | 'timekeeper', segmentStaffAssignments: Record<number, number>, seg: any) => {
     const candidates = staffs.filter((s) => {
@@ -921,31 +987,54 @@ export default function ControlPage() {
     const segId = m.event_timetable_segment_id;
     const expectedJudgeCount = (segId !== null ? segmentJudgeCounts[segId] : null) ?? (m.judges_assignment_count || 3);
 
-    const elements = [];
-    if (expectedJudgeCount >= 1) {
-      elements.push(renderSlot(m, 'main', '主', segmentStaffAssignments, seg));
+    if (expectedJudgeCount <= 3) {
+      return (
+        <div className="flex gap-1.5 items-start">
+          {/* Left side: Main judge */}
+          <div>
+            {renderSlot(m, 'main', '主', segmentStaffAssignments, seg)}
+          </div>
+          {/* Right side: Sub judges stacked vertically */}
+          <div className="flex flex-col gap-1.5">
+            {expectedJudgeCount >= 2 && renderSlot(m, 'sub1', '副', segmentStaffAssignments, seg)}
+            {expectedJudgeCount >= 3 && renderSlot(m, 'sub2', '副', segmentStaffAssignments, seg)}
+          </div>
+        </div>
+      );
+    } else if (expectedJudgeCount === 4) {
+      return (
+        <div className="grid grid-cols-2 gap-1.5">
+          {renderSlot(m, 'main', '主', segmentStaffAssignments, seg)}
+          {renderSlot(m, 'sub1', '副', segmentStaffAssignments, seg)}
+          {renderSlot(m, 'sub2', '副', segmentStaffAssignments, seg)}
+          {renderSlot(m, 'sub3', '副', segmentStaffAssignments, seg)}
+        </div>
+      );
+    } else {
+      return (
+        <div className="flex flex-col gap-1.5 items-start">
+          {/* Top: Main judge */}
+          <div>
+            {renderSlot(m, 'main', '主', segmentStaffAssignments, seg)}
+          </div>
+          {/* Bottom: 2x2 grid for sub judges */}
+          <div className="grid grid-cols-2 gap-1.5">
+            {renderSlot(m, 'sub1', '副', segmentStaffAssignments, seg)}
+            {renderSlot(m, 'sub2', '副', segmentStaffAssignments, seg)}
+            {renderSlot(m, 'sub3', '副', segmentStaffAssignments, seg)}
+            {expectedJudgeCount >= 5 && renderSlot(m, 'sub4', '副', segmentStaffAssignments, seg)}
+          </div>
+        </div>
+      );
     }
-    if (expectedJudgeCount >= 2) {
-      elements.push(renderSlot(m, 'sub1', '副', segmentStaffAssignments, seg));
-    }
-    if (expectedJudgeCount >= 3) {
-      elements.push(renderSlot(m, 'sub2', '副', segmentStaffAssignments, seg));
-    }
-    if (expectedJudgeCount >= 4) {
-      elements.push(renderSlot(m, 'sub3', '副', segmentStaffAssignments, seg));
-    }
-    if (expectedJudgeCount >= 5) {
-      elements.push(renderSlot(m, 'sub4', '副', segmentStaffAssignments, seg));
-    }
-
-    return (
-      <div className="grid grid-cols-2 gap-1.5 w-fit">
-        {elements}
-      </div>
-    );
   };
 
   const judgeStaffs = staffs.filter((s) => s.can_be_main_judge || s.can_be_sub_judge);
+  const filteredTeamsForModal = useMemo(() => {
+    if (!editForm?.event_section_id) return teams;
+    const sectionId = parseInt(editForm.event_section_id);
+    return teams.filter((t) => t.event_section_id === sectionId);
+  }, [teams, editForm?.event_section_id]);
   const uniqueSegments = Array.from(new Map(matches.filter((m) => m.timetable_segment_name).map((m) => [m.event_timetable_segment_id, m.timetable_segment_name])).entries());
   const uniqueSections = Array.from(new Map(matches.filter((m) => m.section_name).map((m) => [m.event_section_id, m.section_name])).entries());
 
@@ -1150,6 +1239,21 @@ export default function ControlPage() {
                     className="text-xs font-semibold text-foreground cursor-pointer select-none"
                   >
                     同じグループ（学校）に属していても別チームであれば割り当てを許可する
+                  </label>
+                </div>
+                <div className="flex items-center gap-2 border-t border-border/40 pt-2">
+                  <input
+                    id="allow-diff-day-checkbox"
+                    type="checkbox"
+                    checked={allowDiffDay}
+                    onChange={(e) => setAllowDiffDay(e.target.checked)}
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20 cursor-pointer"
+                  />
+                  <label
+                    htmlFor="allow-diff-day-checkbox"
+                    className="text-xs font-semibold text-foreground cursor-pointer select-none"
+                  >
+                    違う日の試合であれば過去担当済みであっても割り当てを許可する
                   </label>
                 </div>
               </div>
@@ -1452,7 +1556,7 @@ export default function ControlPage() {
                                     size="sm"
                                     className="p-1.5 h-auto rounded-full text-primary hover:bg-primary/5 active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
                                     onClick={() => openEdit(m)}
-                                    disabled={m.is_staffs_fixed || m.id < 0}
+                                    disabled={m.is_staffs_fixed}
                                   >
                                     <Icon name="tune" size={18} />
                                   </Button>
@@ -1514,7 +1618,7 @@ export default function ControlPage() {
                                     size="sm"
                                     className="p-1.5 h-auto rounded-full text-primary hover:bg-primary/5 active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
                                     onClick={() => openEdit(m)}
-                                    disabled={m.is_staffs_fixed || m.id < 0}
+                                    disabled={m.is_staffs_fixed}
                                   >
                                     <Icon name="tune" size={18} />
                                   </Button>
@@ -1587,7 +1691,7 @@ export default function ControlPage() {
                   onChange={(e) => setEditForm((f) => f ? { ...f, aff_team_id: e.target.value } : f)}
                   className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary focus:outline-none">
                   <option value="">未設定</option>
-                  {teams.map((t) => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
+                  {filteredTeamsForModal.map((t) => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
                 </select>
               </div>
               <div className="space-y-1.5">
@@ -1596,7 +1700,7 @@ export default function ControlPage() {
                   onChange={(e) => setEditForm((f) => f ? { ...f, neg_team_id: e.target.value } : f)}
                   className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary focus:outline-none">
                   <option value="">未設定</option>
-                  {teams.map((t) => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
+                  {filteredTeamsForModal.map((t) => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
                 </select>
               </div>
               <div className="space-y-1.5">

@@ -11,7 +11,7 @@ import Modal from "@/components/ui/Modal";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/Table";
-import TsvImportButton from "@/components/elements/TsvImportButton";
+import CsvImportButton from "@/components/elements/CsvImportButton";
 import {
   Team, TeamCreate, fetchTeams, createTeam, updateTeam, deleteTeam,
   Section, fetchSections,
@@ -90,85 +90,11 @@ export default function TeamsPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
-  const filteredSchoolsForModal = useMemo(() => {
-    // 現在編集中のチームに設定されている学校は必ず選択肢に含める（編集時の誤フィルタリング防止）
-    const currentSchool = form.event_school_id
-      ? schools.find((s) => String(s.id) === form.event_school_id)
-      : null;
-
-    if (!form.event_section_id) return schools;
-    const selectedSection = sections.find((s) => String(s.id) === form.event_section_id);
-    if (!selectedSection) return schools;
-
-    const sectionName = selectedSection.name;
-    const isHighSchool = sectionName.includes("高校");
-    const isJuniorHigh = sectionName.includes("中学");
-    const isElementary = sectionName.includes("小学");
-    const isUniversity = sectionName.includes("大学");
-
-    const filtered = schools.filter((s) => {
-      // 現在設定されている学校は必ず含める
-      if (currentSchool && s.id === currentSchool.id) return true;
-
-      // 1. Keyword match
-      if (isHighSchool && (s.name.includes("高校") || s.name.includes("高等学校") || s.name_aliases?.some(a => a.includes("高校") || a.includes("高等学校")))) return true;
-      if (isJuniorHigh && (s.name.includes("中学") || s.name.includes("中学校") || s.name_aliases?.some(a => a.includes("中学") || a.includes("中学校")))) return true;
-      if (isElementary && (s.name.includes("小学") || s.name.includes("小学校") || s.name_aliases?.some(a => a.includes("小学") || a.includes("小学校")))) return true;
-      if (isUniversity && (s.name.includes("大学") || s.name_aliases?.some(a => a.includes("大学")))) return true;
-
-      // 2. Existing team association match (if a team of this school is already in this division/section)
-      const hasTeamInSection = teams.some((t) => String(t.event_school_id) === String(s.id) && String(t.event_section_id) === String(form.event_section_id));
-      if (hasTeamInSection) return true;
-
-      return false;
-    });
-
-    // Fallback: if no schools match or no keyword is detected, return all schools
-    if (filtered.length === 0 || (!isHighSchool && !isJuniorHigh && !isElementary && !isUniversity)) {
-      return schools;
-    }
-
-    return filtered;
-  }, [form.event_section_id, form.event_school_id, schools, sections, teams]);
-
   const handleSectionChange = (sectionId: string) => {
-    setForm((f) => {
-      const selectedSection = sections.find((s) => String(s.id) === sectionId);
-      let nextSchoolId = f.event_school_id;
-
-      if (selectedSection) {
-        const sectionName = selectedSection.name;
-        const isHighSchool = sectionName.includes("高校");
-        const isJuniorHigh = sectionName.includes("中学");
-        const isElementary = sectionName.includes("小学");
-        const isUniversity = sectionName.includes("大学");
-
-        const currentSchool = schools.find((s) => String(s.id) === f.event_school_id);
-        if (currentSchool) {
-          let matches = false;
-          if (isHighSchool && (currentSchool.name.includes("高校") || currentSchool.name.includes("高等学校") || currentSchool.name_aliases?.some(a => a.includes("高校") || a.includes("高等学校")))) matches = true;
-          else if (isJuniorHigh && (currentSchool.name.includes("中学") || currentSchool.name.includes("中学校") || currentSchool.name_aliases?.some(a => a.includes("中学") || a.includes("中学校")))) matches = true;
-          else if (isElementary && (currentSchool.name.includes("小学") || currentSchool.name.includes("小学校") || currentSchool.name_aliases?.some(a => a.includes("小学") || a.includes("小学校")))) matches = true;
-          else if (isUniversity && (currentSchool.name.includes("大学") || currentSchool.name_aliases?.some(a => a.includes("大学")))) matches = true;
-          else if (!isHighSchool && !isJuniorHigh && !isElementary && !isUniversity) matches = true;
-
-          if (!matches) {
-            const hasTeamInSection = teams.some((t) => String(t.event_school_id) === String(currentSchool.id) && String(t.event_section_id) === sectionId);
-            if (hasTeamInSection) matches = true;
-          }
-
-          if (!matches) {
-            nextSchoolId = "";
-          }
-        }
-      }
-
-      return {
-        ...f,
-        event_section_id: sectionId,
-        event_school_id: nextSchoolId,
-      };
-    });
+    setForm((f) => ({
+      ...f,
+      event_section_id: sectionId,
+    }));
   };
 
   const handleSchoolChange = (schoolId: string) => {
@@ -279,9 +205,18 @@ export default function TeamsPage() {
     setIsImporting(true);
     try {
       let count = 0;
-      for (const row of rows) {
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
         if (row.length < 2) continue;
-        const [orderStr, name, schoolName, sectionName, groupName] = row;
+
+        // Skip header row if present
+        if (i === 0 && (row[0] === "orderOfApplication" || row[1] === "name")) {
+          continue;
+        }
+
+        const [orderStr, name, schoolName, sectionName, isSeedStr, note, groupName] = row;
+        if (!name || !name.trim()) continue;
+
         const school = schools.find((s) => s.name === schoolName?.trim());
         const section = sections.find((s) => s.name === sectionName?.trim());
         let group = groups.find((g) => g.name === groupName?.trim());
@@ -295,6 +230,8 @@ export default function TeamsPage() {
           event_school_id: school?.id ?? null,
           event_section_id: section?.id ?? null,
           team_group_id: group?.id ?? null,
+          is_seed: isSeedStr === "1" || isSeedStr === "true",
+          note: note?.trim() || null,
         });
         count++;
       }
@@ -321,7 +258,7 @@ export default function TeamsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <TsvImportButton onImport={handleImport} isLoading={isImporting} />
+          <CsvImportButton onImport={handleImport} isLoading={isImporting} />
           <Button icon="group_add" onClick={openCreate}>チーム追加</Button>
         </div>
       </div>
@@ -472,7 +409,7 @@ export default function TeamsPage() {
             <select value={form.event_school_id} onChange={(e) => handleSchoolChange(e.target.value)}
               className="w-full px-3 py-2 rounded-lg border border-border bg-white text-sm focus:ring-2 focus:ring-primary focus:outline-none">
               <option value="">未設定</option>
-              {filteredSchoolsForModal.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
+              {schools.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
             </select>
           </div>
 

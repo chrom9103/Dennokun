@@ -89,10 +89,13 @@ async def get_standings(
 
 
 @router.get("/match-summary", response_model=MatchSummary)
-async def get_match_summary(event_id: int):
+async def get_match_summary(
+    event_id: int,
+    round: Optional[str] = Query(default="pre", description="集計対象: pre=予選, main=本戦, all=全試合"),
+):
     """試合のサマリー（総数・確定済み）を返す。"""
     try:
-        return await get_event_match_summary(event_id)
+        return await get_event_match_summary(event_id, round)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

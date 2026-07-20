@@ -1,15 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import Icon from "@/components/ui/Icon";
 import Button from "@/components/ui/Button";
+import { getCurrentUser, logout, User } from "@/lib/auth";
+import { useRouter } from "next/navigation";
 
 /* ──────────────────────────────────────────────
  * User Menu Component
  * ────────────────────────────────────────────── */
-function UserMenu() {
+function UserMenu({ user }: { user: User | null }) {
   const [isOpen, setIsOpen] = useState(false);
+  const router = useRouter();
+
+  async function handleLogout() {
+    try {
+      await logout();
+      router.push("/login");
+    } catch (err) {
+      console.error("Logout failed", err);
+      window.location.href = "/login";
+    }
+  }
+
+  const initial = user?.name ? user.name.slice(0, 1).toUpperCase() : "管";
 
   return (
     <div className="relative">
@@ -17,7 +32,7 @@ function UserMenu() {
         onClick={() => setIsOpen(!isOpen)}
         className="w-9 h-9 rounded-full bg-primary text-white flex items-center justify-center text-sm font-medium hover:opacity-90 transition-opacity"
       >
-        管
+        {initial}
       </button>
 
       {isOpen && (
@@ -28,8 +43,10 @@ function UserMenu() {
           />
           <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-border z-50 py-1 animate-in fade-in slide-in-from-top-1 duration-150">
             <div className="px-4 py-2.5 border-b border-border">
-              <p className="text-xs text-muted-foreground mb-0.5">管理者としてログイン中</p>
-              <p className="text-sm font-medium truncate">admin@example.com</p>
+              <p className="text-xs text-muted-foreground mb-0.5">
+                {user?.permissions?.role === "admin" ? "管理者としてログイン中" : "ログイン中"}
+              </p>
+              <p className="text-sm font-medium truncate">{user?.email || "ユーザー情報なし"}</p>
             </div>
             <div className="py-1">
               <button className="w-full text-left px-4 py-2 text-sm hover:bg-muted transition-colors flex items-center gap-2">
@@ -45,7 +62,7 @@ function UserMenu() {
               <button
                 onClick={() => {
                   setIsOpen(false);
-                  window.location.href = "/login";
+                  handleLogout();
                 }}
                 className="w-full text-left px-4 py-2 text-sm text-destructive hover:bg-red-50 transition-colors flex items-center gap-2"
               >
@@ -60,11 +77,27 @@ function UserMenu() {
   );
 }
 
+
 /* ──────────────────────────────────────────────
  * AppShell Layout Component
  * ────────────────────────────────────────────── */
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    async function fetchUser() {
+      try {
+        const u = await getCurrentUser();
+        setUser(u);
+      } catch (err) {
+        console.error("Authentication check failed:", err);
+        router.push("/login");
+      }
+    }
+    fetchUser();
+  }, [router]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-secondary">
@@ -97,7 +130,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <Button variant="ghost" size="sm" className="p-2 rounded-full text-muted-foreground">
               <Icon name="notifications" size={20} />
             </Button>
-            <UserMenu />
+            <UserMenu user={user} />
           </div>
         </header>
 
@@ -111,3 +144,4 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+

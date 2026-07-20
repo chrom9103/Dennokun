@@ -115,3 +115,22 @@ export async function logout(): Promise<void> {
     throw new Error(error.detail || "ログアウトに失敗しました");
   }
 }
+
+export interface User {
+  id: number;
+  name: string;
+  email: string;
+  permissions?: any;
+}
+
+/**
+ * Get current user profile
+ */
+export async function getCurrentUser(): Promise<User> {
+  const response = await authenticatedFetch(`${getApiBaseUrl()}/auth/me`);
+  if (!response.ok) {
+    throw new Error("ユーザー情報の取得に失敗しました");
+  }
+  return response.json();
+}
+

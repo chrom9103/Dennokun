@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
 import Input from "@/components/ui/Input";
 import Badge from "@/components/ui/Badge";
 import Modal from "@/components/ui/Modal";
+import CsvImportButton from "@/components/elements/CsvImportButton";
 import {
   Table,
   TableHeader,
@@ -67,7 +68,78 @@ export default function TimeSlotSettings({ eventId }: TimeSlotSettingsProps) {
   const [formError, setFormError] = useState<string | null>(null);
 
   const [deleteTarget, setDeleteTarget] = useState<TimetableSegment | null>(null);
+
+  const dayGroups = useMemo(() => {
+    const map = new Map<number, number>();
+    let dayIndex = 0;
+    let prevTime: string | null = null;
+    
+    const sorted = [...segments].sort((a, b) => 
+      (a.order_number ?? 999999) - (b.order_number ?? 999999)
+    );
+    
+    for (const seg of sorted) {
+      if (seg.start_time && prevTime && seg.start_time < prevTime) {
+        dayIndex++;
+      }
+      map.set(seg.id, dayIndex);
+      if (seg.start_time) {
+        prevTime = seg.start_time;
+      }
+    }
+    return map;
+  }, [segments]);
   const [deleting, setDeleting] = useState(false);
+
+  // Import state
+  const [isImporting, setIsImporting] = useState(false);
+
+  const handleImport = async (rows: string[][]) => {
+    setIsImporting(true);
+    try {
+      let created = 0;
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (row.length < 2) continue;
+
+        // Skip header
+        if (i === 0 && (row[0] === "orderNumber" || row[1] === "name")) {
+          continue;
+        }
+
+        const [orderStr, name, , timeDisplay, isPreRoundStr, nameAliasesStr] = row;
+        if (!name || !name.trim()) continue;
+
+        let startTime: string | null = null;
+        let endTime: string | null = null;
+        if (timeDisplay && timeDisplay.includes("-")) {
+          const parts = timeDisplay.split("-");
+          startTime = parts[0]?.trim() || null;
+          endTime = parts[1]?.trim() || null;
+        }
+
+        const aliases = nameAliasesStr
+          ? nameAliasesStr.split("|").map((a) => a.trim()).filter(Boolean)
+          : [];
+
+        await createTimetableSegment(eventId, {
+          name: name.trim(),
+          order_number: orderStr ? parseInt(orderStr) : null,
+          start_time: startTime,
+          end_time: endTime,
+          is_pre_round: isPreRoundStr === "1" || isPreRoundStr === "true",
+          name_aliases: aliases,
+        });
+        created++;
+      }
+      await load();
+      alert(`${created}件の時間枠データをインポートしました`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "インポートに失敗しました");
+    } finally {
+      setIsImporting(false);
+    }
+  };
 
   useEffect(() => {
     load();
@@ -158,9 +230,12 @@ export default function TimeSlotSettings({ eventId }: TimeSlotSettingsProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium text-foreground">時間枠一覧</h3>
-        <Button icon="add" size="sm" onClick={openCreate}>
-          時間枠追加
-        </Button>
+        <div className="flex gap-2">
+          <CsvImportButton onImport={handleImport} isLoading={isImporting} />
+          <Button icon="add" size="sm" onClick={openCreate}>
+            時間枠追加
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -226,9 +301,14 @@ export default function TimeSlotSettings({ eventId }: TimeSlotSettingsProps) {
                   )}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={s.is_pre_round ? "outline" : "default"} className="text-[11px]">
-                    {s.is_pre_round ? "予選" : "本選"}
-                  </Badge>
+                  <div className="flex items-center gap-1">
+                    <Badge variant={s.is_pre_round ? "outline" : "default"} className="text-[11px]">
+                      {s.is_pre_round ? "予選" : "本選"}
+                    </Badge>
+                    <Badge variant="secondary" className="text-[11px]">
+                      {`${(dayGroups.get(s.id) ?? 0) + 1}日目`}
+                    </Badge>
+                  </div>
                 </TableCell>
                 <TableCell align="right">
                   <div className="flex justify-end gap-1">
