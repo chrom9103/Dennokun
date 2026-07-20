@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
 import Input from "@/components/ui/Input";
@@ -68,6 +68,27 @@ export default function TimeSlotSettings({ eventId }: TimeSlotSettingsProps) {
   const [formError, setFormError] = useState<string | null>(null);
 
   const [deleteTarget, setDeleteTarget] = useState<TimetableSegment | null>(null);
+
+  const dayGroups = useMemo(() => {
+    const map = new Map<number, number>();
+    let dayIndex = 0;
+    let prevTime: string | null = null;
+    
+    const sorted = [...segments].sort((a, b) => 
+      (a.order_number ?? 999999) - (b.order_number ?? 999999)
+    );
+    
+    for (const seg of sorted) {
+      if (seg.start_time && prevTime && seg.start_time < prevTime) {
+        dayIndex++;
+      }
+      map.set(seg.id, dayIndex);
+      if (seg.start_time) {
+        prevTime = seg.start_time;
+      }
+    }
+    return map;
+  }, [segments]);
   const [deleting, setDeleting] = useState(false);
 
   // Import state
@@ -280,9 +301,14 @@ export default function TimeSlotSettings({ eventId }: TimeSlotSettingsProps) {
                   )}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={s.is_pre_round ? "outline" : "default"} className="text-[11px]">
-                    {s.is_pre_round ? "予選" : "本選"}
-                  </Badge>
+                  <div className="flex items-center gap-1">
+                    <Badge variant={s.is_pre_round ? "outline" : "default"} className="text-[11px]">
+                      {s.is_pre_round ? "予選" : "本選"}
+                    </Badge>
+                    <Badge variant="secondary" className="text-[11px]">
+                      {`${(dayGroups.get(s.id) ?? 0) + 1}日目`}
+                    </Badge>
+                  </div>
                 </TableCell>
                 <TableCell align="right">
                   <div className="flex justify-end gap-1">

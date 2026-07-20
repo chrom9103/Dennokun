@@ -104,7 +104,7 @@ export async function assignJudges(
   segmentJudgeCounts: Record<number, number>,
   allowReversedPast: boolean = false,
   allowSameGroupDiffTeam: boolean = false,
-  allowPreMainDiff: boolean = false
+  allowDiffDay: boolean = false
 ): Promise<{ status: string; updated_count: number; warning?: string }> {
   return apiFetch(`/api/events/${eventId}/assign-judges`, {
     method: "POST",
@@ -112,7 +112,7 @@ export async function assignJudges(
       segment_judge_counts: segmentJudgeCounts,
       allow_reversed_past: allowReversedPast,
       allow_same_group_diff_team: allowSameGroupDiffTeam,
-      allow_pre_main_diff: allowPreMainDiff
+      allow_diff_day: allowDiffDay
     }),
   });
 }

@@ -21,6 +21,7 @@ async def get_all_matches(event_id: int) -> List[dict]:
                       m.created_at, m.updated_at,
                       ts.name AS timetable_segment_name,
                       ts.order_number AS segment_order,
+                      ts.start_time AS segment_start_time,
                       ts.is_pre_round AS is_pre_round,
                       r.name AS room_name,
                       sec.name AS section_name,

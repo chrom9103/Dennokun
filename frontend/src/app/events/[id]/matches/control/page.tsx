@@ -94,7 +94,7 @@ export default function ControlPage() {
   const [fSection, setFSection] = useState("all");
   const [allowReversedPast, setAllowReversedPast] = useState(false);
   const [allowSameGroupDiffTeam, setAllowSameGroupDiffTeam] = useState(false);
-  const [allowPreMainDiff, setAllowPreMainDiff] = useState(false);
+  const [allowDiffDay, setAllowDiffDay] = useState(false);
   const [unassignedStaffSegId, setUnassignedStaffSegId] = useState<number | null>(null);
 
   // Scroll Restorer to prevent page jumping during silent updates
@@ -348,7 +348,7 @@ export default function ControlPage() {
     setJudgeResult(null);
     setError(null);
     try {
-      const result = await assignJudges(eventId, segmentJudgeCounts, allowReversedPast, allowSameGroupDiffTeam, allowPreMainDiff);
+      const result = await assignJudges(eventId, segmentJudgeCounts, allowReversedPast, allowSameGroupDiffTeam, allowDiffDay);
       setJudgeResult(result);
       await load();
     } catch (e) {
@@ -648,45 +648,104 @@ export default function ControlPage() {
       }
       return a.id - b.id;
     });
+
     const currentSegIdx = sortedSegments.findIndex((s) => s.id === match.event_timetable_segment_id);
     if (currentSegIdx <= 0) return false;
 
-    const pastSegments = sortedSegments.slice(0, currentSegIdx);
+    // 日付グループ(dayIndex)の計算
+    const dayMap = new Map<number, number>();
+    let dayIndex = 0;
+    let prevTime: string | null = null;
+    for (const seg of sortedSegments) {
+      if (seg.start_time && prevTime && seg.start_time < prevTime) {
+        dayIndex++;
+      }
+      dayMap.set(seg.id, dayIndex);
+      if (seg.start_time) {
+        prevTime = seg.start_time;
+      }
+    }
+
+    const currentDay = match.event_timetable_segment_id != null ? (dayMap.get(match.event_timetable_segment_id) ?? 0) : 0;
+
+    // pastSegments のフィルタリング
+    const pastSegments = sortedSegments.slice(0, currentSegIdx).filter((s) => {
+      if (allowDiffDay) {
+        // 日別区別フラグが有効な場合、同じ日付の過去セグメントのみを対象とする
+        return dayMap.get(s.id) === currentDay;
+      }
+      return true;
+    });
+
     const pastSegmentIds = new Set(pastSegments.map((s) => s.id));
     const pastMatches = matches.filter((pastM) => pastM.event_timetable_segment_id !== null && pastSegmentIds.has(pastM.event_timetable_segment_id));
 
-    const seenSchoolsAsAff = new Set<number>();
-    const seenSchoolsAsNeg = new Set<number>();
+    if (allowSameGroupDiffTeam) {
+      // チーム単位で重複チェック
+      const seenTeamsAsAff = new Set<number>();
+      const seenTeamsAsNeg = new Set<number>();
 
-    pastMatches.forEach((pastM) => {
-      const isAssigned = (
-        pastM.main_judge_staff_id === staffId ||
-        pastM.sub_judge1_staff_id === staffId ||
-        pastM.sub_judge2_staff_id === staffId ||
-        pastM.sub_judge3_staff_id === staffId ||
-        pastM.sub_judge4_staff_id === staffId ||
-        pastM.timekeeper_staff_id === staffId
-      );
-      if (isAssigned && pastM.event_section_id === match.event_section_id) {
-        const pastAffTeam = teams.find((t) => t.id === pastM.aff_team_id);
-        const pastNegTeam = teams.find((t) => t.id === pastM.neg_team_id);
-        if (pastAffTeam?.event_school_id) seenSchoolsAsAff.add(pastAffTeam.event_school_id);
-        if (pastNegTeam?.event_school_id) seenSchoolsAsNeg.add(pastNegTeam.event_school_id);
+      pastMatches.forEach((pastM) => {
+        const isAssigned = (
+          pastM.main_judge_staff_id === staffId ||
+          pastM.sub_judge1_staff_id === staffId ||
+          pastM.sub_judge2_staff_id === staffId ||
+          pastM.sub_judge3_staff_id === staffId ||
+          pastM.sub_judge4_staff_id === staffId ||
+          pastM.timekeeper_staff_id === staffId
+        );
+        if (isAssigned && pastM.event_section_id === match.event_section_id) {
+          if (pastM.aff_team_id) seenTeamsAsAff.add(pastM.aff_team_id);
+          if (pastM.neg_team_id) seenTeamsAsNeg.add(pastM.neg_team_id);
+        }
+      });
+
+      if (allowReversedPast) {
+        const hasAffConflict = match.aff_team_id && seenTeamsAsAff.has(match.aff_team_id);
+        const hasNegConflict = match.neg_team_id && seenTeamsAsNeg.has(match.neg_team_id);
+        return !!(hasAffConflict || hasNegConflict);
+      } else {
+        const allSeenTeams = new Set([...seenTeamsAsAff, ...seenTeamsAsNeg]);
+        return !!(
+          (match.aff_team_id && allSeenTeams.has(match.aff_team_id)) ||
+          (match.neg_team_id && allSeenTeams.has(match.neg_team_id))
+        );
       }
-    });
-
-    if (allowReversedPast) {
-      const hasAffConflict = affSchoolId && seenSchoolsAsAff.has(affSchoolId);
-      const hasNegConflict = negSchoolId && seenSchoolsAsNeg.has(negSchoolId);
-      return !!(hasAffConflict || hasNegConflict);
     } else {
-      const allSeenSchools = new Set([...seenSchoolsAsAff, ...seenSchoolsAsNeg]);
-      return !!(
-        (affSchoolId && allSeenSchools.has(affSchoolId)) ||
-        (negSchoolId && allSeenSchools.has(negSchoolId))
-      );
+      // 学校単位で重複チェック
+      const seenSchoolsAsAff = new Set<number>();
+      const seenSchoolsAsNeg = new Set<number>();
+
+      pastMatches.forEach((pastM) => {
+        const isAssigned = (
+          pastM.main_judge_staff_id === staffId ||
+          pastM.sub_judge1_staff_id === staffId ||
+          pastM.sub_judge2_staff_id === staffId ||
+          pastM.sub_judge3_staff_id === staffId ||
+          pastM.sub_judge4_staff_id === staffId ||
+          pastM.timekeeper_staff_id === staffId
+        );
+        if (isAssigned && pastM.event_section_id === match.event_section_id) {
+          const pastAffTeam = teams.find((t) => t.id === pastM.aff_team_id);
+          const pastNegTeam = teams.find((t) => t.id === pastM.neg_team_id);
+          if (pastAffTeam?.event_school_id) seenSchoolsAsAff.add(pastAffTeam.event_school_id);
+          if (pastNegTeam?.event_school_id) seenSchoolsAsNeg.add(pastNegTeam.event_school_id);
+        }
+      });
+
+      if (allowReversedPast) {
+        const hasAffConflict = affSchoolId && seenSchoolsAsAff.has(affSchoolId);
+        const hasNegConflict = negSchoolId && seenSchoolsAsNeg.has(negSchoolId);
+        return !!(hasAffConflict || hasNegConflict);
+      } else {
+        const allSeenSchools = new Set([...seenSchoolsAsAff, ...seenSchoolsAsNeg]);
+        return !!(
+          (affSchoolId && allSeenSchools.has(affSchoolId)) ||
+          (negSchoolId && allSeenSchools.has(negSchoolId))
+        );
+      }
     }
-  }, [teams, segments, matches, allowReversedPast]);
+  }, [teams, segments, matches, allowReversedPast, allowSameGroupDiffTeam, allowDiffDay]);
 
   const getSortedCandidates = (match: MatchListItem, role: 'main' | 'sub1' | 'sub2' | 'sub3' | 'sub4' | 'timekeeper', segmentStaffAssignments: Record<number, number>, seg: any) => {
     const candidates = staffs.filter((s) => {
@@ -1184,17 +1243,17 @@ export default function ControlPage() {
                 </div>
                 <div className="flex items-center gap-2 border-t border-border/40 pt-2">
                   <input
-                    id="allow-pre-main-diff-checkbox"
+                    id="allow-diff-day-checkbox"
                     type="checkbox"
-                    checked={allowPreMainDiff}
-                    onChange={(e) => setAllowPreMainDiff(e.target.checked)}
+                    checked={allowDiffDay}
+                    onChange={(e) => setAllowDiffDay(e.target.checked)}
                     className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20 cursor-pointer"
                   />
                   <label
-                    htmlFor="allow-pre-main-diff-checkbox"
+                    htmlFor="allow-diff-day-checkbox"
                     className="text-xs font-semibold text-foreground cursor-pointer select-none"
                   >
-                    予選と本戦が異なっていれば過去担当済みであっても割り当てを許可する
+                    違う日の試合であれば過去担当済みであっても割り当てを許可する
                   </label>
                 </div>
               </div>

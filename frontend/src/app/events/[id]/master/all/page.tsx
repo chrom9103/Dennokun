@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Icon from "@/components/ui/Icon";
 import Button from "@/components/ui/Button";
@@ -79,6 +79,27 @@ export default function AllDataManagementPage() {
   // UI States
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const segmentDayGroups = useMemo(() => {
+    const map = new Map<number, number>();
+    let dayIndex = 0;
+    let prevTime: string | null = null;
+    
+    const sorted = [...segments].sort((a, b) => 
+      (a.order_number ?? 999999) - (b.order_number ?? 999999)
+    );
+    
+    for (const seg of sorted) {
+      if (seg.start_time && prevTime && seg.start_time < prevTime) {
+        dayIndex++;
+      }
+      map.set(seg.id, dayIndex);
+      if (seg.start_time) {
+        prevTime = seg.start_time;
+      }
+    }
+    return map;
+  }, [segments]);
 
   useEffect(() => {
     if (eventId && !isNaN(eventId)) {
@@ -474,11 +495,16 @@ export default function AllDataManagementPage() {
                               {row.start_time || row.end_time ? `${row.start_time ?? ""}〜${row.end_time ?? ""}` : "-"}
                             </TableCell>
                             <TableCell>
-                              {row.is_pre_round ? (
-                                <Badge variant="warning" className="bg-amber-100 border-amber-200 text-amber-800 text-[10px]">予選枠</Badge>
-                              ) : (
-                                <Badge variant="secondary" className="text-[10px]">本戦枠</Badge>
-                              )}
+                              <div className="flex items-center gap-1">
+                                {row.is_pre_round ? (
+                                  <Badge variant="warning" className="bg-amber-100 border-amber-200 text-amber-800 text-[10px]">予選枠</Badge>
+                                ) : (
+                                  <Badge variant="secondary" className="text-[10px]">本戦枠</Badge>
+                                )}
+                                <Badge variant="outline" className="text-[10px]">
+                                  {`${(segmentDayGroups.get(row.id) ?? 0) + 1}日目`}
+                                </Badge>
+                              </div>
                             </TableCell>
                             <TableCell className="max-w-xs truncate text-xs text-muted-foreground">
                               {row.name_aliases?.join(", ") || "-"}

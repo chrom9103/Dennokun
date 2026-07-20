@@ -43,6 +43,7 @@ async def main():
         teams=teams,
         judges_per_match=segment_judge_counts,
         allow_reversed_past=False,
+        allow_diff_day=True,
     )
 
     if warning:
