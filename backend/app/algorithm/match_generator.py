@@ -515,22 +515,19 @@ def _find_best_role_pair(
     played_role_pairs: set[tuple[str, str]],
 ) -> tuple[str, str] | None:
     """
-    利用可能なロールの中から、条件①③を最もよく満たすペアを選択する。
-    同スコアのペアが複数ある場合はランダムに選択する。
+    利用可能なロールの中から、条件①③を最もよく満たすペアを貪欲に選択する。
+    スコアが最小のペアを決定論的に返す（同スコアの場合は先頭ペアを採用）。
     """
     if len(avail_roles) < 2:
         return None
 
     min_count = min(role_counters[r].match_count for r in avail_roles)
 
-    shuffled = avail_roles[:]
-    random.shuffle(shuffled)
-
-    best_pairs: list[tuple[str, str]] = []
+    best_pair: tuple[str, str] | None = None
     best_score = float("inf")
 
-    for i, r_a in enumerate(shuffled):
-        for r_b in shuffled[i + 1:]:
+    for i, r_a in enumerate(avail_roles):
+        for r_b in avail_roles[i + 1:]:
             score = _compute_pair_score(
                 r_a=r_a,
                 r_b=r_b,
@@ -540,11 +537,9 @@ def _find_best_role_pair(
             )
             if score < best_score:
                 best_score = score
-                best_pairs = [(r_a, r_b)]
-            elif score == best_score:
-                best_pairs.append((r_a, r_b))
+                best_pair = (r_a, r_b)
 
-    return random.choice(best_pairs) if best_pairs else None
+    return best_pair
 
 
 def _compute_pair_score(
@@ -596,10 +591,8 @@ def _compute_pair_score(
 
 
 # ===========================================================================
-# Phase 2: Aff/Neg 一括割り当て（②④）— 複数試行で最良結果を採用
+# Phase 2: Aff/Neg 一括割り当て（②④）— 貪欲法で決定論的に割り当て
 # ===========================================================================
-
-_AFF_NEG_MAX_TRIALS = 50  # 最大試行回数
 
 
 def _assign_aff_neg_best(
@@ -607,22 +600,17 @@ def _assign_aff_neg_best(
     confirmed_role_entries: list[_SkeletonEntry],
 ) -> list[_SkeletonEntry]:
     """
-    複数回の試行の中から条件②④の違反が最も少ない Aff/Neg 割り当てを採用する。
-    違反数 0 の結果が見つかった時点で即時返却する。
+    貪欲法で Aff/Neg を割り当てる。
+    割り当て結果が条件②④を全て満たす（違反数 0）場合は即時返却する。
+    貪欲法は決定論的であるため、ランダム試行による不安定さを排除する。
     """
-    best_result: list[_SkeletonEntry] = []
-    best_violations = float("inf")
+    result = _try_assign_aff_neg(pairs, confirmed_role_entries)
+    violations = _count_aff_neg_violations(result, confirmed_role_entries)
+    if violations == 0:
+        return result
 
-    for _ in range(_AFF_NEG_MAX_TRIALS):
-        result = _try_assign_aff_neg(pairs, confirmed_role_entries)
-        violations = _count_aff_neg_violations(result, confirmed_role_entries)
-        if violations == 0:
-            return result
-        if violations < best_violations:
-            best_violations = violations
-            best_result = result
-
-    return best_result
+    # 貪欲法で条件を満たせない場合は最良結果をそのまま返す
+    return result
 
 
 def _count_aff_neg_violations(
@@ -675,16 +663,17 @@ def _try_assign_aff_neg(
     confirmed: list[_SkeletonEntry],
 ) -> list[_SkeletonEntry]:
     """
-    ランダムな処理順序で Aff/Neg を割り当てる 1 回の試行。
+    貪欲法で Aff/Neg を決定論的に割り当てる。
 
     アルゴリズム（残り試合数ベースの強制割り当て）:
       1. 各ロールの総試合数から「目標 Aff 回数」を計算する。
-         （偶数試合 → total/2、奇数試合 → ランダムに ceil or floor）
-      2. ペアをランダム順で処理し、各ロールの残り試合数と
+         （偶数試合 → total/2、奇数試合 → ceil を優先）
+      2. ペアを「need_aff の差の絶対値が大きい順（強制度が高い順）」で
+         ソートして処理し、各ロールの残り試合数と
          残り必要 Aff/Neg 回数から強制割り当てを行う:
          - X の残り試合が全て Aff 必要 → X=Aff 強制
          - X の残り試合が全て Neg 必要 → X=Neg 強制（Y=Aff 強制）
-         - 強制なし → ④ バランスでタイブレーク → ランダム
+         - 強制なし → ④ バランスでタイブレーク → X を Aff に固定（決定論的）
       3. カウンターを更新して次のペアへ。
     """
     # 各ロールの総出場試合数を計算（confirmed + pairs）
@@ -732,19 +721,20 @@ def _try_assign_aff_neg(
         ca = conf_aff[role]
         cn = conf_neg[role]
         half = total // 2
-        if total % 2 == 0:
-            target_aff = half
-        else:
-            target_aff = half if random.random() < 0.5 else half + 1
+        # 奇数の場合は ceil（Aff を多め）を優先して決定論的に設定
+        target_aff = half + (total % 2)
         need_aff[role] = max(0, target_aff - ca)
         need_neg[role] = max(0, (total - target_aff) - cn)
 
     def g(d: dict, k: str) -> int:
         return d.get(k, 0)
 
-    # ランダム順で処理
-    order = list(range(len(pairs)))
-    random.shuffle(order)
+    # 「need_aff の差の絶対値が大きい順」でソート（強制割り当てが必要なペアを先に処理）
+    def _pair_priority(idx: int) -> int:
+        p = pairs[idx]
+        return -abs(g(need_aff, p.role_x) - g(need_aff, p.role_y))
+
+    order = sorted(range(len(pairs)), key=_pair_priority)
     result: list[_SkeletonEntry | None] = [None] * len(pairs)
 
     for idx in order:
@@ -775,7 +765,7 @@ def _try_assign_aff_neg(
         elif yna > xna:
             aff_role, neg_role = ry, rx
         else:
-            # ④ バランスでタイブレーク
+            # ④ バランスでタイブレーク（決定論的: ランダム排除）
             if x_seed and y_seed:
                 xt = g(svs_aff, rx) - g(svs_neg, rx)
                 yt = g(svs_aff, ry) - g(svs_neg, ry)
@@ -787,7 +777,8 @@ def _try_assign_aff_neg(
                 yt = g(svn_aff, ry) - g(svn_neg, ry)
                 aff_role, neg_role = (ry, rx) if yt <= 0 else (rx, ry)
             else:
-                aff_role, neg_role = (rx, ry) if random.random() < 0.5 else (ry, rx)
+                # 非シード同士は need_aff が多い方を Aff に（同数なら rx を Aff に固定）
+                aff_role, neg_role = (rx, ry) if g(need_aff, rx) >= g(need_aff, ry) else (ry, rx)
 
         # カウンター更新
         need_aff[aff_role] = max(0, g(need_aff, aff_role) - 1)
