@@ -19,7 +19,8 @@ match_generator.py — スロットベース対戦カード生成ロジック（
     雛形完成後、各ロールに実際のチームをランダムにシャッフルして割り当て、
     会場スロットと組み合わせて最終出力を生成する。
 
-【満たすべき条件】
+【満たすべき条件と優先順位 (0 -> 1 -> 2 -> 3 -> 4)】
+  ⓪ 再対戦の禁止     : 同一対戦校同士の2回目以降の対戦を厳格に禁止（最優先）。
   ① 試合数均等       : 各チームの累計試合数の最大差が 1 以内。超過時は警告。
   ② Aff/Neg バランス : 各チームの Aff 回数 − Neg 回数 が常に ±1 以内。
   ③ シード対戦タイプ数バランス:
@@ -557,19 +558,21 @@ def _compute_pair_score(
     ロールペアのスコアを計算する（低いほど良い）。
 
     優先順位:
-      ① 試合数平準化（最優先・10000 倍ペナルティ）
-      再対戦回避（2000 ペナルティ）
-      ③ シード配置バランス（300〜500 ペナルティ）
+      ⓪ 再対戦禁止（最優先・100,000,000 ペナルティ）
+      ① 試合数平準化（次点最優先・1,000,000 倍ペナルティ）
+      ③ シード配置バランス（1,000 倍ペナルティ）
     """
+    score = 0.0
+
+    # ⓪ 再対戦禁止（最優先）
+    if (r_a, r_b) in played_role_pairs:
+        score += 100000000.0
+
     ca = role_counters[r_a]
     cb = role_counters[r_b]
 
-    # ① 試合数平準化（最優先）
-    score = float((ca.match_count - min_count + cb.match_count - min_count) * 10000)
-
-    # 再対戦回避
-    if (r_a, r_b) in played_role_pairs:
-        score += 2000
+    # ① 試合数平準化
+    score += float((ca.match_count - min_count + cb.match_count - min_count) * 1000000.0)
 
     # ③ シード配置バランス
     a_seed = r_a.startswith("S")
@@ -579,15 +582,15 @@ def _compute_pair_score(
         for rc in (ca, cb):
             diff_after = (rc.svs_count + 1) - rc.svn_count
             if diff_after > 1:
-                score += 500 * diff_after
+                score += 1000.0 * diff_after
     elif a_seed:
         diff_after = (ca.svn_count + 1) - ca.svs_count
         if diff_after > 1:
-            score += 300 * diff_after
+            score += 1000.0 * diff_after
     elif b_seed:
         diff_after = (cb.svn_count + 1) - cb.svs_count
         if diff_after > 1:
-            score += 300 * diff_after
+            score += 1000.0 * diff_after
 
     return score
 
@@ -626,7 +629,10 @@ def _count_aff_neg_violations(
     result: list[_SkeletonEntry],
     confirmed: list[_SkeletonEntry],
 ) -> int:
-    """②④の違反数を数える（ロール単位）。"""
+    """
+    ②④の違反スコア（加重値）を数える。
+    優先順位: ② Aff/Neg バランス (重み 1000) > ④ シード対戦タイプ別 Aff/Neg バランス (重み 1)
+    """
     aff_c: dict[str, int] = defaultdict(int)
     neg_c: dict[str, int] = defaultdict(int)
     svs_aff: dict[str, int] = defaultdict(int)
@@ -648,16 +654,20 @@ def _count_aff_neg_violations(
         elif n_s:
             svn_neg[n] += 1
 
-    violations = 0
+    violations_score = 0
+    # ② Aff/Neg バランス (優先度高)
     for role in set(aff_c) | set(neg_c):
         if abs(aff_c[role] - neg_c[role]) > 1:
-            violations += 1
+            violations_score += 1000
+
+    # ④ シード対戦タイプ別 Aff/Neg バランス (優先度低)
+    for role in set(aff_c) | set(neg_c):
         if role.startswith("S"):
             if abs(svs_aff[role] - svs_neg[role]) > 1:
-                violations += 1
+                violations_score += 1
             if abs(svn_aff[role] - svn_neg[role]) > 1:
-                violations += 1
-    return violations
+                violations_score += 1
+    return violations_score
 
 
 def _try_assign_aff_neg(
