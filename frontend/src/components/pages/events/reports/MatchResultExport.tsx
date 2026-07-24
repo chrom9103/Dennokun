@@ -69,7 +69,8 @@ export default function MatchResultExport({
         background: "#fff",
         fontFamily: "'Noto Sans JP', 'Hiragino Kaku Gothic ProN', Meiryo, sans-serif",
         padding: "24px 20px",
-        minWidth: "900px",
+        width: "1024px",
+        boxSizing: "border-box",
         color: "#000",
       }}
     >
