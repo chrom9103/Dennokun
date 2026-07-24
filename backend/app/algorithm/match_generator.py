@@ -405,6 +405,68 @@ def _generate_empty_slots(
 # Phase 1: ペア構成（①③の最適化）
 # ===========================================================================
 
+def _generate_perfect_matchings(roles: list[str]):
+    """ロールのリストからすべての完全マッチング（ペアの組み合わせ）を生成するジェネレータ"""
+    if not roles:
+        yield []
+        return
+    first = roles[0]
+    rest = roles[1:]
+    for i, partner in enumerate(rest):
+        pair = (first, partner)
+        rem = rest[:i] + rest[i + 1:]
+        for sub in _generate_perfect_matchings(rem):
+            yield [pair] + sub
+
+
+def _evaluate_matching(
+    matching: list[tuple[str, str]],
+    role_counters: dict[str, _PairCounters],
+    played_role_pairs: set[tuple[str, str]],
+) -> float:
+    """
+    1セグメント内のペアリング（完全マッチング）全体のスコアを計算する（低いほど良い）。
+
+    優先順位:
+      ⓪ 再対戦禁止（最優先・100,000,000 ペナルティ）
+      ③ シード配置バランス（次点・1,000 ペナルティ）
+    """
+    score = 0.0
+
+    # ⓪ 再対戦チェック
+    for r_a, r_b in matching:
+        if (r_a, r_b) in played_role_pairs:
+            score += 100000000.0
+
+    # ③ シード配置バランスの仮更新後の計算
+    svs_inc: dict[str, int] = defaultdict(int)
+    svn_inc: dict[str, int] = defaultdict(int)
+
+    for r_a, r_b in matching:
+        a_seed = r_a.startswith("S")
+        b_seed = r_b.startswith("S")
+        if a_seed and b_seed:
+            svs_inc[r_a] += 1
+            svs_inc[r_b] += 1
+        elif a_seed:
+            svn_inc[r_a] += 1
+        elif b_seed:
+            svn_inc[r_b] += 1
+
+    for r, rc in role_counters.items():
+        if not r.startswith("S"):
+            continue
+        new_svs = rc.svs_count + svs_inc[r]
+        new_svn = rc.svn_count + svn_inc[r]
+        diff = abs(new_svs - new_svn)
+        if diff > 1:
+            score += 1000.0 * diff
+        else:
+            score += 10.0 * diff
+
+    return score
+
+
 def _build_pairs(
     n_seed: int,
     n_non: int,
@@ -416,7 +478,12 @@ def _build_pairs(
 ) -> list[_SkeletonPair]:
     """
     抽象ロール ID（S0…, N0…）を用いて、全セグメントの対戦ペアを決定する。
-    この段階では Aff/Neg を決めず、試合数均等（①）とシード配置バランス（③）のみ最適化する。
+
+    【2段階アルゴリズム】:
+      1. 各セグメントにおいて、出場試合数が最も少ないチームを優先選出する（条件①試合数均等を構造的に保証）。
+      2. 選出されたチーム群の中で全完全マッチングを列挙し、
+         再対戦禁止（条件⓪）およびシード配置バランス（条件③）が最も優れるペアリングを採用する。
+      3. もし選出チーム間で再対戦を回避できない場合、条件⓪ > ① に従い、次点チームとの入れ替えを試行する。
     """
     seed_roles = [f"S{i}" for i in range(n_seed)]
     non_seed_roles = [f"N{i}" for i in range(n_non)]
@@ -437,51 +504,136 @@ def _build_pairs(
     result: list[_SkeletonPair] = []
 
     for seg_id, count in seg_new_counts:
-        used_in_seg: set[str] = set()
+        # すでにこのセグメントで使用されているロール（確定試合＋生成済み試合）
+        seg_used_roles: set[str] = set()
         for entry in confirmed_role_entries:
             if entry.seg_id == seg_id:
-                used_in_seg.add(entry.aff_role)
-                used_in_seg.add(entry.neg_role)
+                seg_used_roles.add(entry.aff_role)
+                seg_used_roles.add(entry.neg_role)
         for pair in result:
             if pair.seg_id == seg_id:
-                used_in_seg.add(pair.role_x)
-                used_in_seg.add(pair.role_y)
+                seg_used_roles.add(pair.role_x)
+                seg_used_roles.add(pair.role_y)
 
-        for _ in range(count):
-            avail = [r for r in all_roles if r not in used_in_seg]
-            if len(avail) < 2:
-                seg_name = seg_name_map.get(seg_id, str(seg_id))
-                warnings.append(
-                    f"時間枠「{seg_name}」の部門ID「{sec_id}」において、"
-                    f"対戦可能なペアを組めるロールが不足したため、試合が生成できませんでした。"
-                )
-                break
+        avail_roles = [r for r in all_roles if r not in seg_used_roles]
+        needed_roles_count = count * 2
 
-            pair_roles = _find_best_role_pair(
-                avail_roles=avail,
-                role_counters=role_counters,
-                played_role_pairs=played_role_pairs,
+        if len(avail_roles) < needed_roles_count:
+            seg_name = seg_name_map.get(seg_id, str(seg_id))
+            warnings.append(
+                f"時間枠「{seg_name}」の部門ID「{sec_id}」において、"
+                f"対戦可能なペアを組めるロールが不足したため、試合が生成できませんでした。"
             )
-            if not pair_roles:
-                seg_name = seg_name_map.get(seg_id, str(seg_id))
-                warnings.append(
-                    f"時間枠「{seg_name}」の部門ID「{sec_id}」において、"
-                    f"対戦可能なペアを組めるロールが不足したため、試合が生成できませんでした。"
-                )
-                break
+            continue
 
-            role_x, role_y = pair_roles
+        # Step 1: 出場試合数が少ない順にソート（①の保証）
+        # 同数の場合は決定論的な順序を維持
+        avail_roles_sorted = sorted(
+            avail_roles,
+            key=lambda r: (role_counters[r].match_count, r)
+        )
+
+        # 最適なマッチングと選出メンバーを探す
+        best_matching: list[tuple[str, str]] | None = None
+        best_score = float("inf")
+
+        # 優先度の高い candidate_roles (上位 2*count 人)
+        candidates = avail_roles_sorted[:needed_roles_count]
+
+        # 候補者内での完全マッチング列挙
+        if count <= 8:
+            for matching in _generate_perfect_matchings(candidates):
+                score = _evaluate_matching(matching, role_counters, played_role_pairs)
+                if score < best_score:
+                    best_score = score
+                    best_matching = matching
+        else:
+            # count > 8 の場合の貪欲フォールバック
+            best_matching = _greedy_pairing(candidates, role_counters, played_role_pairs)
+            best_score = _evaluate_matching(best_matching, role_counters, played_role_pairs)
+
+        # Step 3: もし選出メンバー内で再対戦ペナルティ(>= 100,000,000)が発生した場合、
+        # 次点のメンバーと入れ替えて再対戦のない組み合わせがあるか試行 (⓪ > ① の尊重)
+        if best_score >= 100000000.0 and len(avail_roles_sorted) > needed_roles_count:
+            # 試合数の差が1以内の範囲で入れ替え可能な追加メンバーを取得
+            min_candidate_count = role_counters[candidates[0]].match_count
+            extended_avail = [
+                r for r in avail_roles_sorted
+                if role_counters[r].match_count <= min_candidate_count + 1
+            ]
+
+            if len(extended_avail) >= needed_roles_count:
+                # 組み合わせを探索（簡単のため、全パターンから上位を優先）
+                # itertools.combinations などで検索
+                import itertools
+                for sub_cand in itertools.combinations(extended_avail, needed_roles_count):
+                    sub_cand_list = list(sub_cand)
+                    if sub_cand_list == candidates:
+                        continue
+                    if count <= 6:  # 計算量増大を防ぐため上限を設定
+                        for matching in _generate_perfect_matchings(sub_cand_list):
+                            score = _evaluate_matching(matching, role_counters, played_role_pairs)
+                            # 試合数の差によるペナルティをわずかに追加
+                            extra_match_penalty = sum(
+                                (role_counters[r].match_count - min_candidate_count) * 10000.0
+                                for r in sub_cand_list
+                            )
+                            total_score = score + extra_match_penalty
+                            if total_score < best_score:
+                                best_score = total_score
+                                best_matching = matching
+                                if best_score < 100000000.0:
+                                    break
+                    if best_score < 100000000.0:
+                        break
+
+        if not best_matching:
+            seg_name = seg_name_map.get(seg_id, str(seg_id))
+            warnings.append(
+                f"時間枠「{seg_name}」の部門ID「{sec_id}」において、"
+                f"対戦可能なペアを組めるロールが不足したため、試合が生成できませんでした。"
+            )
+            continue
+
+        # ペアリングを確定しカウンターを更新
+        for r_x, r_y in best_matching:
             _update_pair_counters(
-                role_x=role_x,
-                role_y=role_y,
+                role_x=r_x,
+                role_y=r_y,
                 role_counters=role_counters,
                 played_role_pairs=played_role_pairs,
             )
-            used_in_seg.add(role_x)
-            used_in_seg.add(role_y)
-            result.append(_SkeletonPair(seg_id=seg_id, role_x=role_x, role_y=role_y))
+            result.append(_SkeletonPair(seg_id=seg_id, role_x=r_x, role_y=r_y))
 
     return result
+
+
+def _greedy_pairing(
+    roles: list[str],
+    role_counters: dict[str, _PairCounters],
+    played_role_pairs: set[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    """count > 8 の場合の貪欲ペアリングフォールバック"""
+    avail = list(roles)
+    matching = []
+    while len(avail) >= 2:
+        r_a = avail.pop(0)
+        best_b = None
+        best_s = float("inf")
+        for r_b in avail:
+            # 簡易スコア評価
+            s = 0.0
+            if (r_a, r_b) in played_role_pairs:
+                s += 100000000.0
+            if s < best_s:
+                best_s = s
+                best_b = r_b
+        if best_b:
+            avail.remove(best_b)
+            matching.append((r_a, best_b))
+        else:
+            break
+    return matching
 
 
 def _update_pair_counters(
@@ -507,87 +659,6 @@ def _update_pair_counters(
         role_counters[role_x].svn_count += 1
     elif y_seed:
         role_counters[role_y].svn_count += 1
-
-
-def _find_best_role_pair(
-    avail_roles: list[str],
-    role_counters: dict[str, _PairCounters],
-    played_role_pairs: set[tuple[str, str]],
-) -> tuple[str, str] | None:
-    """
-    利用可能なロールの中から、条件①③を最もよく満たすペアを貪欲に選択する。
-    スコアが最小のペアを決定論的に返す（同スコアの場合は先頭ペアを採用）。
-    """
-    if len(avail_roles) < 2:
-        return None
-
-    min_count = min(role_counters[r].match_count for r in avail_roles)
-
-    best_pair: tuple[str, str] | None = None
-    best_score = float("inf")
-
-    for i, r_a in enumerate(avail_roles):
-        for r_b in avail_roles[i + 1:]:
-            score = _compute_pair_score(
-                r_a=r_a,
-                r_b=r_b,
-                role_counters=role_counters,
-                played_role_pairs=played_role_pairs,
-                min_count=min_count,
-            )
-            if score < best_score:
-                best_score = score
-                best_pair = (r_a, r_b)
-
-    return best_pair
-
-
-def _compute_pair_score(
-    r_a: str,
-    r_b: str,
-    role_counters: dict[str, _PairCounters],
-    played_role_pairs: set[tuple[str, str]],
-    min_count: int,
-) -> float:
-    """
-    ロールペアのスコアを計算する（低いほど良い）。
-
-    優先順位:
-      ⓪ 再対戦禁止（最優先・100,000,000 ペナルティ）
-      ① 試合数平準化（次点最優先・1,000,000 倍ペナルティ）
-      ③ シード配置バランス（1,000 倍ペナルティ）
-    """
-    score = 0.0
-
-    # ⓪ 再対戦禁止（最優先）
-    if (r_a, r_b) in played_role_pairs:
-        score += 100000000.0
-
-    ca = role_counters[r_a]
-    cb = role_counters[r_b]
-
-    # ① 試合数平準化
-    score += float((ca.match_count - min_count + cb.match_count - min_count) * 1000000.0)
-
-    # ③ シード配置バランス
-    a_seed = r_a.startswith("S")
-    b_seed = r_b.startswith("S")
-
-    if a_seed and b_seed:
-        for rc in (ca, cb):
-            diff_after = (rc.svs_count + 1) - rc.svn_count
-            if diff_after > 1:
-                score += 1000.0 * diff_after
-    elif a_seed:
-        diff_after = (ca.svn_count + 1) - ca.svs_count
-        if diff_after > 1:
-            score += 1000.0 * diff_after
-    elif b_seed:
-        diff_after = (cb.svn_count + 1) - cb.svs_count
-        if diff_after > 1:
-            score += 1000.0 * diff_after
-
-    return score
 
 
 # ===========================================================================
