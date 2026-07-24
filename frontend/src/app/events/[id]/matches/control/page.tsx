@@ -1208,8 +1208,8 @@ export default function ControlPage() {
                 ))}
               </TableBody>
             </Table>
-            {/* Card Footer with actions */}
-            <div className="border-t border-border p-4 bg-secondary/5 space-y-4">
+            {/* Card Footer with options */}
+            <div className="border-t border-border p-4 bg-secondary/5">
               <div className="flex flex-col gap-2 p-2.5 rounded-lg bg-white border border-border/85 shadow-xs">
                 <div className="flex items-center gap-2">
                   <input
@@ -1257,63 +1257,63 @@ export default function ControlPage() {
                   </label>
                 </div>
               </div>
-
-              {/* Action Buttons Row */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <Button
-                    className="w-full font-semibold"
-                    onClick={() => handleGenerate(false)}
-                    loading={generating}
-                    disabled={teams.length < 2}
-                  >
-                    <Icon name="auto_awesome" size={18} />
-                    <span className="ml-2">{generating ? "生成中..." : "試合の組み合わせを生成"}</span>
-                  </Button>
-                  {teams.length < 2 && (
-                    <p className="text-xs text-center text-muted-foreground mt-1">
-                      チームを2チーム以上登録すると生成できます
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <Button
-                    className="w-full font-semibold"
-                    variant="outlined"
-                    onClick={() => handleGenerate(true)}
-                    loading={generating}
-                  >
-                    <Icon name="restart_alt" size={18} />
-                    <span className="ml-2">{generating ? "リセット中..." : "組み合わせをリセット"}</span>
-                  </Button>
-                  <p className="text-xs text-center text-muted-foreground mt-1">
-                    出場校・スタッフが空の枠組みのみを生成
-                  </p>
-                </div>
-                
-                <div>
-                  <Button
-                    className="w-full font-semibold"
-                    variant="outlined"
-                    onClick={handleAssignJudges}
-                    loading={assigningJudges}
-                    disabled={matches.length === 0 || staffs.filter(s => s.can_be_main_judge || s.can_be_sub_judge).length === 0}
-                  >
-                    <Icon name="gavel" size={18} />
-                    <span className="ml-2">{assigningJudges ? "割り当て中..." : "審判の自動割り当て"}</span>
-                  </Button>
-                  {matches.length === 0 && (
-                    <p className="text-xs text-center text-muted-foreground mt-1">
-                      先に試合の組み合わせを生成してください
-                    </p>
-                  )}
-                </div>
-              </div>
             </div>
           </CardContent>
         )}
       </Card>
+
+      {/* Action Buttons Row */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <Button
+            className="w-full font-semibold"
+            onClick={() => handleGenerate(false)}
+            loading={generating}
+            disabled={teams.length < 2}
+          >
+            <Icon name="auto_awesome" size={18} />
+            <span className="ml-2">{generating ? "生成中..." : "試合の組み合わせを生成"}</span>
+          </Button>
+          {teams.length < 2 && (
+            <p className="text-xs text-center text-muted-foreground mt-1">
+              チームを2チーム以上登録すると生成できます
+            </p>
+          )}
+        </div>
+
+        <div>
+          <Button
+            className="w-full font-semibold"
+            variant="outlined"
+            onClick={() => handleGenerate(true)}
+            loading={generating}
+          >
+            <Icon name="restart_alt" size={18} />
+            <span className="ml-2">{generating ? "リセット中..." : "組み合わせをリセット"}</span>
+          </Button>
+          <p className="text-xs text-center text-muted-foreground mt-1">
+            出場校・スタッフが空の枠組みのみを生成
+          </p>
+        </div>
+        
+        <div>
+          <Button
+            className="w-full font-semibold"
+            variant="outlined"
+            onClick={handleAssignJudges}
+            loading={assigningJudges}
+            disabled={matches.length === 0 || staffs.filter(s => s.can_be_main_judge || s.can_be_sub_judge).length === 0}
+          >
+            <Icon name="gavel" size={18} />
+            <span className="ml-2">{assigningJudges ? "割り当て中..." : "審判の自動割り当て"}</span>
+          </Button>
+          {matches.length === 0 && (
+            <p className="text-xs text-center text-muted-foreground mt-1">
+              先に試合の組み合わせを生成してください
+            </p>
+          )}
+        </div>
+      </div>
 
       {/* Match list */}
       <div className="space-y-6">
