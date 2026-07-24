@@ -187,6 +187,55 @@ def test_small_tournament():
     return diff <= 1
 
 
+def test_seed_segment_dispersion():
+    """優先順位⑤: シード校が予選第1試合から各セグメントに均等に分散しているか検証"""
+    teams = []
+    # 16 teams: 4 seed, 12 non-seed
+    for i in range(16):
+        teams.append({
+            "id": i + 1,
+            "event_section_id": 1,
+            "event_school_id": i + 1,
+            "is_seed": i < 4,
+            "name": f"{'Seed' if i < 4 else 'Team'}{i}",
+        })
+
+    segments = [{"id": s, "order_number": s, "name": f"予選第{s}試合"} for s in range(1, 5)]
+    rooms = [{"id": r, "order_number": r} for r in range(1, 5)]
+    sspm = {f"1_{s}": 4 for s in range(1, 5)}  # 各時間枠4並行（8枠）
+
+    matches, warnings = generate_matches_by_slots(
+        teams=teams,
+        segments=segments,
+        rooms=rooms,
+        section_segment_parallel_matches=sspm,
+    )
+
+    seed_ids = {t["id"] for t in teams if t["is_seed"]}
+    print("=== 優先順位⑤ シード校セグメント分散検証 (16 teams, 4 seeds, 4R x 4並行) ===")
+    
+    seed_counts_per_seg = []
+    for seg in segments:
+        seg_matches = [m for m in matches if m["event_timetable_segment_id"] == seg["id"]]
+        seed_cnt = sum(
+            (1 if m["aff_team_id"] in seed_ids else 0) + (1 if m["neg_team_id"] in seed_ids else 0)
+            for m in seg_matches
+        )
+        seed_counts_per_seg.append(seed_cnt)
+        print(f"  {seg['name']}: シード校 {seed_cnt} / 全 8 枠")
+
+    # 予選第1試合にシード校が割り当たっていること（0ではない）
+    first_seg_ok = seed_counts_per_seg[0] > 0
+    # セグメント間でのシード校数の最大差が1以内であること
+    diff = max(seed_counts_per_seg) - min(seed_counts_per_seg)
+    dispersion_ok = diff <= 1
+
+    ok = first_seg_ok and dispersion_ok
+    print(f"  予選第1試合シード校存在: {'✅ OK' if first_seg_ok else '❌ 第1試合にシード校なし!'}")
+    print(f"  セグメント間シード数差: {diff} {'✅ OK' if dispersion_ok else '❌ 分散が偏っています!'}")
+    return ok
+
+
 if __name__ == "__main__":
     results = []
     print()
@@ -198,6 +247,8 @@ if __name__ == "__main__":
     print()
     results.append(("小規模", test_small_tournament()))
     print()
+    results.append(("シード校セグメント分散", test_seed_segment_dispersion()))
+    print()
     print("=" * 50)
     all_pass = True
     for name, ok in results:
@@ -207,7 +258,8 @@ if __name__ == "__main__":
             all_pass = False
     print("=" * 50)
     if not all_pass:
-        print("❌ 条件①違反が検出されました")
+        print("❌ テスト失敗が検出されました")
         sys.exit(1)
     else:
         print("✅ 全テスト合格")
+

@@ -19,7 +19,7 @@ match_generator.py — スロットベース対戦カード生成ロジック（
     雛形完成後、各ロールに実際のチームをランダムにシャッフルして割り当て、
     会場スロットと組み合わせて最終出力を生成する。
 
-【満たすべき条件と優先順位 (0 -> 1 -> 2 -> 3 -> 4)】
+【満たすべき条件と優先順位 (0 -> 1 -> 2 -> 3 -> 4 -> 5)】
   ⓪ 再対戦の禁止     : 同一対戦校同士の2回目以降の対戦を厳格に禁止（最優先）。
   ① 試合数均等       : 各チームの累計試合数の最大差が 1 以内。超過時は警告。
   ② Aff/Neg バランス : 各チームの Aff 回数 − Neg 回数 が常に ±1 以内。
@@ -29,6 +29,8 @@ match_generator.py — スロットベース対戦カード生成ロジック（
   ④ シード対戦タイプ別 Aff/Neg バランス:
        シード同士の対戦・シード vs 非シードの対戦それぞれにおいて、
        各シードチームの Aff/Neg の差が 1 以内。
+  ⑤ シード・非シード校のセグメント分散バランス:
+       同じ試合数の範囲内で、各セグメントにシード校と非シード校が均等に分散するように配置する。
 
 【注意事項】
   - 1 チームは同一時間枠（セグメント）に最大 1 試合のみ出場可能。
@@ -423,6 +425,8 @@ def _evaluate_matching(
     matching: list[tuple[str, str]],
     role_counters: dict[str, _PairCounters],
     played_role_pairs: set[tuple[str, str]],
+    n_seed: int = 0,
+    n_non: int = 0,
 ) -> float:
     """
     1セグメント内のペアリング（完全マッチング）全体のスコアを計算する（低いほど良い）。
@@ -430,6 +434,7 @@ def _evaluate_matching(
     優先順位:
       ⓪ 再対戦禁止（最優先・100,000,000 ペナルティ）
       ③ シード配置バランス（次点・1,000 ペナルティ）
+      ⑤ シード・非シード校のセグメント分散バランス（0.1 ペナルティ）
     """
     score = 0.0
 
@@ -464,7 +469,74 @@ def _evaluate_matching(
         else:
             score += 10.0 * diff
 
+    # ⑤ シード・非シード校のセグメント分散バランス（優先順位5）
+    total_teams = n_seed + n_non
+    if total_teams > 0 and n_seed > 0:
+        total_participants = len(matching) * 2
+        ideal_seeds = round(total_participants * (n_seed / total_teams))
+        actual_seeds = sum(
+            (1 if r_a.startswith("S") else 0) + (1 if r_b.startswith("S") else 0)
+            for r_a, r_b in matching
+        )
+        score += 0.1 * abs(actual_seeds - ideal_seeds)
+
     return score
+
+
+def _select_candidates_balanced(
+    avail_roles: list[str],
+    role_counters: dict[str, _PairCounters],
+    needed_count: int,
+    n_seed: int,
+    n_non: int,
+    seg_id: int,
+) -> list[str]:
+    """
+    出場試合数均等（条件①）を最優先にしつつ、同じ試合数の範囲内で
+    シード校と非シード校が各セグメントに均等に分散するように候補を選出する（条件⑤）。
+    """
+    total_teams = n_seed + n_non
+    seed_ratio = (n_seed / total_teams) if total_teams > 0 else 0.0
+
+    groups: dict[int, list[str]] = defaultdict(list)
+    for r in avail_roles:
+        mc = role_counters[r].match_count
+        groups[mc].append(r)
+
+    selected: list[str] = []
+
+    for mc in sorted(groups.keys()):
+        if len(selected) >= needed_count:
+            break
+        group_roles = groups[mc]
+        needed_rem = needed_count - len(selected)
+
+        if len(group_roles) <= needed_rem:
+            selected.extend(group_roles)
+        else:
+            g_seeds = [r for r in group_roles if r.startswith("S")]
+            g_non_seeds = [r for r in group_roles if not r.startswith("S")]
+
+            # セグメントごとに決定論的かつ分散するハッシュ値でソート（特定のID固定化を防止）
+            g_seeds.sort(key=lambda r: hash((seg_id, r)))
+            g_non_seeds.sort(key=lambda r: hash((seg_id, r)))
+
+            target_seed = round(needed_rem * seed_ratio)
+            take_seed = min(len(g_seeds), max(0, target_seed))
+            take_non = needed_rem - take_seed
+
+            if take_non > len(g_non_seeds):
+                take_non = len(g_non_seeds)
+                take_seed = needed_rem - take_non
+
+            if take_seed > len(g_seeds):
+                take_seed = len(g_seeds)
+                take_non = needed_rem - take_seed
+
+            selected.extend(g_seeds[:take_seed])
+            selected.extend(g_non_seeds[:take_non])
+
+    return selected
 
 
 def _build_pairs(
@@ -481,6 +553,7 @@ def _build_pairs(
 
     【2段階アルゴリズム】:
       1. 各セグメントにおいて、出場試合数が最も少ないチームを優先選出する（条件①試合数均等を構造的に保証）。
+         同試合数内ではシード校と非シード校をセグメントに均等分散する（条件⑤）。
       2. 選出されたチーム群の中で全完全マッチングを列挙し、
          再対戦禁止（条件⓪）およびシード配置バランス（条件③）が最も優れるペアリングを採用する。
       3. もし選出チーム間で再対戦を回避できない場合、条件⓪ > ① に従い、次点チームとの入れ替えを試行する。
@@ -526,8 +599,17 @@ def _build_pairs(
             )
             continue
 
-        # Step 1: 出場試合数が少ない順にソート（①の保証）
-        # 同数の場合は決定論的な順序を維持
+        # Step 1: 出場試合数が少ない順にソート（①の保証）、
+        # 同試合数内ではシード校と非シード校を各セグメントに均等分散選出（⑤の保証）
+        candidates = _select_candidates_balanced(
+            avail_roles=avail_roles,
+            role_counters=role_counters,
+            needed_count=needed_roles_count,
+            n_seed=n_seed,
+            n_non=n_non,
+            seg_id=seg_id,
+        )
+
         avail_roles_sorted = sorted(
             avail_roles,
             key=lambda r: (role_counters[r].match_count, r)
@@ -537,20 +619,21 @@ def _build_pairs(
         best_matching: list[tuple[str, str]] | None = None
         best_score = float("inf")
 
-        # 優先度の高い candidate_roles (上位 2*count 人)
-        candidates = avail_roles_sorted[:needed_roles_count]
-
         # 候補者内での完全マッチング列挙
         if count <= 8:
             for matching in _generate_perfect_matchings(candidates):
-                score = _evaluate_matching(matching, role_counters, played_role_pairs)
+                score = _evaluate_matching(
+                    matching, role_counters, played_role_pairs, n_seed, n_non
+                )
                 if score < best_score:
                     best_score = score
                     best_matching = matching
         else:
             # count > 8 の場合の貪欲フォールバック
             best_matching = _greedy_pairing(candidates, role_counters, played_role_pairs)
-            best_score = _evaluate_matching(best_matching, role_counters, played_role_pairs)
+            best_score = _evaluate_matching(
+                best_matching, role_counters, played_role_pairs, n_seed, n_non
+            )
 
         # Step 3: もし選出メンバー内で再対戦ペナルティ(>= 100,000,000)が発生した場合、
         # 次点のメンバーと入れ替えて再対戦のない組み合わせがあるか試行 (⓪ > ① の尊重)
@@ -564,7 +647,6 @@ def _build_pairs(
 
             if len(extended_avail) >= needed_roles_count:
                 # 組み合わせを探索（簡単のため、全パターンから上位を優先）
-                # itertools.combinations などで検索
                 import itertools
                 for sub_cand in itertools.combinations(extended_avail, needed_roles_count):
                     sub_cand_list = list(sub_cand)
@@ -572,7 +654,9 @@ def _build_pairs(
                         continue
                     if count <= 6:  # 計算量増大を防ぐため上限を設定
                         for matching in _generate_perfect_matchings(sub_cand_list):
-                            score = _evaluate_matching(matching, role_counters, played_role_pairs)
+                            score = _evaluate_matching(
+                                matching, role_counters, played_role_pairs, n_seed, n_non
+                            )
                             # 試合数の差によるペナルティをわずかに追加
                             extra_match_penalty = sum(
                                 (role_counters[r].match_count - min_candidate_count) * 10000.0
