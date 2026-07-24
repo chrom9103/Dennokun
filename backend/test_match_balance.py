@@ -6,7 +6,7 @@ Phase 1 の条件①違反を再現するテスト。
 import sys
 sys.path.insert(0, ".")
 
-from app.algorithm.match_generator import generate_matches_by_slots
+from app.algorithm.match_generator import generate_matches_by_slots, validate_match_schedule
 from collections import defaultdict
 
 
@@ -236,6 +236,57 @@ def test_seed_segment_dispersion():
     return ok
 
 
+def test_full_validation_schedule():
+    """ハード制約（Aff/Neg 2:2 完全均等）およびソフト制約（放置防止・会場利用分布）の自動検証"""
+    teams = []
+    # 12 teams: 2 seed, 10 non-seed
+    for i in range(12):
+        teams.append({
+            "id": i + 1,
+            "event_section_id": 1,
+            "event_school_id": i + 1,
+            "is_seed": i < 2,
+            "name": f"{'Seed' if i < 2 else 'Team'}{i}",
+        })
+
+    # 4 segments, 3 parallel matches (6 teams match per segment, 6 teams rest)
+    segments = [{"id": s, "order_number": s, "name": f"予選第{s}試合"} for s in range(1, 5)]
+    rooms = [{"id": r, "order_number": r, "name": f"Room {r}"} for r in range(1, 4)]
+    sspm = {f"1_{s}": 3 for s in range(1, 5)}
+
+    matches, warnings = generate_matches_by_slots(
+        teams=teams,
+        segments=segments,
+        rooms=rooms,
+        section_segment_parallel_matches=sspm,
+    )
+
+    is_valid, report, stats = validate_match_schedule(
+        matches=matches,
+        teams=teams,
+        segments=segments,
+        rooms=rooms,
+    )
+
+    print("=== 全体バリデーションレポート (12 teams, 4試合, 3並行) ===")
+    for line in report:
+        print(f"  {line}")
+
+    # 各チームの Aff/Neg 表示
+    aff_c, neg_c = stats["aff_counts"], stats["neg_counts"]
+    print("  各チーム Aff/Neg 内訳:")
+    all_2_2 = True
+    for t in teams:
+        a = aff_c.get(t["id"], 0)
+        n = neg_c.get(t["id"], 0)
+        print(f"    {t['name']:10s}: Aff {a}回 / Neg {n}回 (計 {a+n} 試合)")
+        if a + n == 4 and (a != 2 or n != 2):
+            all_2_2 = False
+
+    print(f"  ハード制約 Aff:Neg = 2:2 完全判定: {'✅ OK' if all_2_2 else '❌ FAIL'}")
+    return is_valid and all_2_2
+
+
 if __name__ == "__main__":
     results = []
     print()
@@ -248,6 +299,8 @@ if __name__ == "__main__":
     results.append(("小規模", test_small_tournament()))
     print()
     results.append(("シード校セグメント分散", test_seed_segment_dispersion()))
+    print()
+    results.append(("自動バリデーション＆ハード制約", test_full_validation_schedule()))
     print()
     print("=" * 50)
     all_pass = True
@@ -262,4 +315,5 @@ if __name__ == "__main__":
         sys.exit(1)
     else:
         print("✅ 全テスト合格")
+
 

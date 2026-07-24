@@ -87,10 +87,11 @@ class _SkeletonEntry:
 
 @dataclass
 class _PairCounters:
-    """Phase 1 で使うロールごとのペア数カウンター（①③用）"""
+    """Phase 1 で使うロールごとのペア数カウンター（①③および放置防止用）"""
     match_count: int = 0
     svs_count: int = 0   # シード同士の対戦数（③）
     svn_count: int = 0   # シード vs 非シードの対戦数（③）
+    last_seg_idx: int = -1  # 最後に試合を行ったセグメントのインデックス（放置防止用）
 
 
 # ===========================================================================
@@ -323,6 +324,17 @@ def generate_matches_by_slots(
         warnings=warnings,
     )
 
+    # 自動検証（バリデーション）の実行
+    is_valid, val_report, _ = validate_match_schedule(
+        matches=confirmed_matches + generated_matches,
+        teams=teams,
+        segments=segments,
+        rooms=rooms,
+    )
+    for msg in val_report:
+        if "❌" in msg or "⚠️" in msg:
+            warnings.append(msg)
+
     return generated_matches, warnings
 
 
@@ -490,10 +502,12 @@ def _select_candidates_balanced(
     n_seed: int,
     n_non: int,
     seg_id: int,
+    seg_idx: int = 0,
 ) -> list[str]:
     """
     出場試合数均等（条件①）を最優先にしつつ、同じ試合数の範囲内で
-    シード校と非シード校が各セグメントに均等に分散するように候補を選出する（条件⑤）。
+    シード校と非シード校が各セグメントに均等に分散し、
+    かつ連続空きコマ（放置）を防止するように候補を選出する（条件③⑤）。
     """
     total_teams = n_seed + n_non
     seed_ratio = (n_seed / total_teams) if total_teams > 0 else 0.0
@@ -517,9 +531,9 @@ def _select_candidates_balanced(
             g_seeds = [r for r in group_roles if r.startswith("S")]
             g_non_seeds = [r for r in group_roles if not r.startswith("S")]
 
-            # セグメントごとに決定論的かつ分散するハッシュ値でソート（特定のID固定化を防止）
-            g_seeds.sort(key=lambda r: hash((seg_id, r)))
-            g_non_seeds.sort(key=lambda r: hash((seg_id, r)))
+            # 放置防止: 最後の試合から時間が経っている（last_seg_idx が小さい）順に優先ソート
+            g_seeds.sort(key=lambda r: (role_counters[r].last_seg_idx, hash((seg_id, r))))
+            g_non_seeds.sort(key=lambda r: (role_counters[r].last_seg_idx, hash((seg_id, r))))
 
             target_seed = round(needed_rem * seed_ratio)
             take_seed = min(len(g_seeds), max(0, target_seed))
@@ -553,7 +567,7 @@ def _build_pairs(
 
     【2段階アルゴリズム】:
       1. 各セグメントにおいて、出場試合数が最も少ないチームを優先選出する（条件①試合数均等を構造的に保証）。
-         同試合数内ではシード校と非シード校をセグメントに均等分散する（条件⑤）。
+         同試合数内ではシード校と非シード校をセグメントに均等分散し、かつ放置を防止する（条件③⑤）。
       2. 選出されたチーム群の中で全完全マッチングを列挙し、
          再対戦禁止（条件⓪）およびシード配置バランス（条件③）が最も優れるペアリングを採用する。
       3. もし選出チーム間で再対戦を回避できない場合、条件⓪ > ① に従い、次点チームとの入れ替えを試行する。
@@ -572,11 +586,12 @@ def _build_pairs(
             role_y=entry.neg_role,
             role_counters=role_counters,
             played_role_pairs=played_role_pairs,
+            seg_idx=0,
         )
 
     result: list[_SkeletonPair] = []
 
-    for seg_id, count in seg_new_counts:
+    for seg_idx, (seg_id, count) in enumerate(seg_new_counts):
         # すでにこのセグメントで使用されているロール（確定試合＋生成済み試合）
         seg_used_roles: set[str] = set()
         for entry in confirmed_role_entries:
@@ -600,7 +615,7 @@ def _build_pairs(
             continue
 
         # Step 1: 出場試合数が少ない順にソート（①の保証）、
-        # 同試合数内ではシード校と非シード校を各セグメントに均等分散選出（⑤の保証）
+        # 同試合数内ではシード校と非シード校を各セグメントに均等分散選出かつ放置防止（③⑤の保証）
         candidates = _select_candidates_balanced(
             avail_roles=avail_roles,
             role_counters=role_counters,
@@ -608,6 +623,7 @@ def _build_pairs(
             n_seed=n_seed,
             n_non=n_non,
             seg_id=seg_id,
+            seg_idx=seg_idx,
         )
 
         avail_roles_sorted = sorted(
@@ -638,7 +654,6 @@ def _build_pairs(
         # Step 3: もし選出メンバー内で再対戦ペナルティ(>= 100,000,000)が発生した場合、
         # 次点のメンバーと入れ替えて再対戦のない組み合わせがあるか試行 (⓪ > ① の尊重)
         if best_score >= 100000000.0 and len(avail_roles_sorted) > needed_roles_count:
-            # 試合数の差が1以内の範囲で入れ替え可能な追加メンバーを取得
             min_candidate_count = role_counters[candidates[0]].match_count
             extended_avail = [
                 r for r in avail_roles_sorted
@@ -646,18 +661,16 @@ def _build_pairs(
             ]
 
             if len(extended_avail) >= needed_roles_count:
-                # 組み合わせを探索（簡単のため、全パターンから上位を優先）
                 import itertools
                 for sub_cand in itertools.combinations(extended_avail, needed_roles_count):
                     sub_cand_list = list(sub_cand)
                     if sub_cand_list == candidates:
                         continue
-                    if count <= 6:  # 計算量増大を防ぐため上限を設定
+                    if count <= 6:
                         for matching in _generate_perfect_matchings(sub_cand_list):
                             score = _evaluate_matching(
                                 matching, role_counters, played_role_pairs, n_seed, n_non
                             )
-                            # 試合数の差によるペナルティをわずかに追加
                             extra_match_penalty = sum(
                                 (role_counters[r].match_count - min_candidate_count) * 10000.0
                                 for r in sub_cand_list
@@ -686,6 +699,7 @@ def _build_pairs(
                 role_y=r_y,
                 role_counters=role_counters,
                 played_role_pairs=played_role_pairs,
+                seg_idx=seg_idx,
             )
             result.append(_SkeletonPair(seg_id=seg_id, role_x=r_x, role_y=r_y))
 
@@ -705,7 +719,6 @@ def _greedy_pairing(
         best_b = None
         best_s = float("inf")
         for r_b in avail:
-            # 簡易スコア評価
             s = 0.0
             if (r_a, r_b) in played_role_pairs:
                 s += 100000000.0
@@ -725,12 +738,15 @@ def _update_pair_counters(
     role_y: str,
     role_counters: dict[str, _PairCounters],
     played_role_pairs: set[tuple[str, str]],
+    seg_idx: int = 0,
 ) -> None:
     """Phase 1 用: ペア確定時のカウンター更新（Aff/Neg なし）"""
     if role_x not in role_counters or role_y not in role_counters:
         return
     role_counters[role_x].match_count += 1
     role_counters[role_y].match_count += 1
+    role_counters[role_x].last_seg_idx = seg_idx
+    role_counters[role_y].last_seg_idx = seg_idx
     played_role_pairs.add((role_x, role_y))
     played_role_pairs.add((role_y, role_x))
 
@@ -755,17 +771,109 @@ def _assign_aff_neg_best(
     confirmed_role_entries: list[_SkeletonEntry],
 ) -> list[_SkeletonEntry]:
     """
-    貪欲法で Aff/Neg を割り当てる。
-    割り当て結果が条件②④を全て満たす（違反数 0）場合は即時返却する。
-    貪欲法は決定論的であるため、ランダム試行による不安定さを排除する。
-    """
-    result = _try_assign_aff_neg(pairs, confirmed_role_entries)
-    violations = _count_aff_neg_violations(result, confirmed_role_entries)
-    if violations == 0:
-        return result
+    バックトラック探索（DFS）を用いて、全チームの Aff/Neg バランスが完全均等（ハード制約）を
+    満たす割り当てを探索して決定する。
 
-    # 貪欲法で条件を満たせない場合は最良結果をそのまま返す
-    return result
+    偶数試合数: aff_count == neg_count (例: 4試合なら 2:2)
+    奇数試合数: abs(aff_count - neg_count) <= 1
+    """
+    if not pairs:
+        return []
+
+    # 1. 各ロールの出場予定回数をカウント
+    role_totals: dict[str, int] = defaultdict(int)
+    conf_aff: dict[str, int] = defaultdict(int)
+    conf_neg: dict[str, int] = defaultdict(int)
+
+    for e in confirmed_role_entries:
+        conf_aff[e.aff_role] += 1
+        conf_neg[e.neg_role] += 1
+        role_totals[e.aff_role] += 1
+        role_totals[e.neg_role] += 1
+
+    for p in pairs:
+        role_totals[p.role_x] += 1
+        role_totals[p.role_y] += 1
+
+    # 各ロールの Aff / Neg それぞれの上限値 (偶数は半々、奇数は ceil)
+    max_aff: dict[str, int] = {}
+    max_neg: dict[str, int] = {}
+    for r, tot in role_totals.items():
+        half = tot // 2
+        extra = tot % 2
+        max_aff[r] = half + extra
+        max_neg[r] = half + extra
+
+    # DFS バックトラック
+    best_solution: list[_SkeletonEntry] | None = None
+    best_violations = float("inf")
+
+    curr_aff: dict[str, int] = defaultdict(int)
+    curr_neg: dict[str, int] = defaultdict(int)
+    current_assignment: list[_SkeletonEntry] = []
+
+    def dfs(idx: int) -> bool:
+        nonlocal best_solution, best_violations
+        if idx == len(pairs):
+            sol = list(current_assignment)
+            viol = _count_aff_neg_violations(sol, confirmed_role_entries)
+            if viol < best_violations:
+                best_violations = viol
+                best_solution = sol
+            return viol == 0  # 違反数0（完全均等）なら完了
+
+        p = pairs[idx]
+        rx, ry = p.role_x, p.role_y
+
+        # パターン1: rx = Aff, ry = Neg
+        can_p1 = (
+            (conf_aff[rx] + curr_aff[rx] + 1 <= max_aff[rx]) and
+            (conf_neg[ry] + curr_neg[ry] + 1 <= max_neg[ry])
+        )
+
+        # パターン2: rx = Neg, ry = Aff
+        can_p2 = (
+            (conf_neg[rx] + curr_neg[rx] + 1 <= max_neg[rx]) and
+            (conf_aff[ry] + curr_aff[ry] + 1 <= max_aff[ry])
+        )
+
+        need_aff_x = max_aff[rx] - (conf_aff[rx] + curr_aff[rx])
+        need_aff_y = max_aff[ry] - (conf_aff[ry] + curr_aff[ry])
+
+        options = []
+        if can_p1 and can_p2:
+            if need_aff_x >= need_aff_y:
+                options = [(rx, ry), (ry, rx)]
+            else:
+                options = [(ry, rx), (rx, ry)]
+        elif can_p1:
+            options = [(rx, ry)]
+        elif can_p2:
+            options = [(ry, rx)]
+        else:
+            options = [(rx, ry), (ry, rx)]
+
+        for aff_r, neg_r in options:
+            curr_aff[aff_r] += 1
+            curr_neg[neg_r] += 1
+            current_assignment.append(_SkeletonEntry(seg_id=p.seg_id, aff_role=aff_r, neg_role=neg_r))
+
+            if dfs(idx + 1):
+                return True
+
+            current_assignment.pop()
+            curr_aff[aff_r] -= 1
+            curr_neg[neg_r] -= 1
+
+        return False
+
+    dfs(0)
+
+    if best_solution is not None:
+        return best_solution
+
+    # フォールバック
+    return _try_assign_aff_neg(pairs, confirmed_role_entries)
 
 
 def _count_aff_neg_violations(
@@ -1039,3 +1147,122 @@ def _check_rematch_warnings(
             f"{', '.join(rematch_messages)}。"
             f"試合数の均等化を優先した結果発生したものです。"
         )
+
+
+# ===========================================================================
+# スケジュール自動検証（バリデーション）
+# ===========================================================================
+
+def validate_match_schedule(
+    matches: list[dict],
+    teams: list[dict],
+    segments: list[dict],
+    rooms: list[dict],
+) -> tuple[bool, list[str], dict]:
+    """
+    生成された対戦スケジュールに対して自動検証（バリデーション）を行う。
+
+    検証項目:
+      1. Aff/Neg バランス（4試合などの偶数試合数では 2:2 の完全均等化、奇数は差1以内）[ハード制約]
+      2. 連戦数および連続空きコマ数（3コマ以上の連続放置がないか）[ソフト制約]
+      3. 会場利用回数の分布および偏り
+
+    Returns:
+      (is_valid, report_messages, statistics_dict)
+    """
+    report: list[str] = []
+    is_valid = True
+    stats: dict = {}
+
+    team_map = {t["id"]: t.get("name", str(t["id"])) for t in teams}
+    sorted_segs = sorted(segments, key=lambda s: s.get("order_number") or s["id"])
+    seg_order_map = {s["id"]: i + 1 for i, s in enumerate(sorted_segs)}
+    room_name_map = {r["id"]: r.get("name", str(r["id"])) for r in rooms}
+
+    # 1. Aff/Neg バランス検証 [ハード制約]
+    aff_counts: dict[int, int] = defaultdict(int)
+    neg_counts: dict[int, int] = defaultdict(int)
+    team_matches: dict[int, list[dict]] = defaultdict(list)
+
+    for m in matches:
+        aid = m.get("aff_team_id")
+        nid = m.get("neg_team_id")
+        if aid:
+            aff_counts[aid] += 1
+            team_matches[aid].append(m)
+        if nid:
+            neg_counts[nid] += 1
+            team_matches[nid].append(m)
+
+    aff_neg_violations = []
+    for t in teams:
+        tid = t["id"]
+        a = aff_counts[tid]
+        n = neg_counts[tid]
+        total = a + n
+        if total == 0:
+            continue
+        diff = abs(a - n)
+        expected_diff = 0 if total % 2 == 0 else 1
+        if diff > expected_diff:
+            is_valid = False
+            aff_neg_violations.append(
+                f"チーム「{team_map[tid]}」: Aff {a}回 / Neg {n}回 (総試合数 {total}, 差 {diff})"
+            )
+
+    if aff_neg_violations:
+        report.append(
+            f"❌ 【ハード制約違反】 Aff/Negの不均衡が検出されました:\n  " + "\n  ".join(aff_neg_violations)
+        )
+    else:
+        report.append("✅ 【Aff/Neg検証】 全チームの Aff/Neg バランスは正常（完全均等）です。")
+
+    # 2. 連戦数および連続空きコマ数（放置）検証
+    idle_warnings = []
+    for t in teams:
+        tid = t["id"]
+        t_segs = sorted([
+            seg_order_map[m["event_timetable_segment_id"]]
+            for m in team_matches[tid]
+            if m.get("event_timetable_segment_id") in seg_order_map
+        ])
+        if not t_segs:
+            continue
+
+        max_idle = 0
+        for i in range(len(t_segs) - 1):
+            idle = t_segs[i + 1] - t_segs[i] - 1
+            if idle > max_idle:
+                max_idle = idle
+
+        if max_idle >= 3:
+            idle_warnings.append(f"チーム「{team_map[tid]}」: 最大 {max_idle} コマ連続空き（放置）")
+
+    if idle_warnings:
+        report.append(
+            f"⚠️ 【放置警告】 3コマ以上の連続休憩が発生しているチームがあります:\n  " + "\n  ".join(idle_warnings)
+        )
+    else:
+        report.append("✅ 【放置検証】 3コマ以上の長時間放置（連続空きコマ）は発生していません。")
+
+    # 3. 会場利用分布検証
+    room_usage: dict[int, int] = defaultdict(int)
+
+    for m in matches:
+        rid = m.get("event_room_id")
+        if rid:
+            room_usage[rid] += 1
+
+    room_counts = [room_usage[r["id"]] for r in rooms]
+    min_room_used = min(room_counts) if room_counts else 0
+    max_room_used = max(room_counts) if room_counts else 0
+    report.append(
+        f"ℹ️ 【会場利用分布】 会場使用回数: 最小 {min_room_used} 試合 / 最大 {max_room_used} 試合"
+    )
+
+    stats["aff_counts"] = dict(aff_counts)
+    stats["neg_counts"] = dict(neg_counts)
+    stats["room_usage"] = dict(room_usage)
+    stats["is_valid"] = is_valid
+
+    return is_valid, report, stats
