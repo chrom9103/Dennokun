@@ -369,17 +369,31 @@ export default function FinalResultsPage() {
     setExporting(true);
     try {
       const html2canvas = (await import("html2canvas")).default;
-      const canvas = await html2canvas(root, { scale: 2, useCORS: true, backgroundColor: "#fff" });
+      const rawCanvas = await html2canvas(root, { scale: 2, useCORS: true, backgroundColor: "#fff" });
+
+      // 横幅を1024px相当に固定するリサイズ
+      const targetWidth = 1024;
+      const targetHeight = Math.round((rawCanvas.height * targetWidth) / rawCanvas.width);
+
+      const canvas = document.createElement("canvas");
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(rawCanvas, 0, 0, targetWidth, targetHeight);
+      }
 
       if (format === "pdf") {
         const { jsPDF } = await import("jspdf");
         const imgData = canvas.toDataURL("image/jpeg", 0.95);
         const pdf = new jsPDF({
-          orientation: canvas.width > canvas.height ? "landscape" : "portrait",
+          orientation: targetWidth > targetHeight ? "landscape" : "portrait",
           unit: "px",
-          format: [canvas.width / 2, canvas.height / 2],
+          format: [targetWidth, targetHeight],
         });
-        pdf.addImage(imgData, "JPEG", 0, 0, canvas.width / 2, canvas.height / 2);
+        pdf.addImage(imgData, "JPEG", 0, 0, targetWidth, targetHeight);
         const blob = pdf.output("blob");
         downloadBlob(blob, `match-results-${eventId}.pdf`);
       } else {
