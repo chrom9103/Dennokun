@@ -786,7 +786,8 @@ export default function ControlPage() {
         (negSchoolId && staff.interested_school_ids?.includes(negSchoolId))
       );
 
-      const hasSeenSameSchoolInPast = checkPastSchoolConflict(staff.id, match);
+      // 司会タイマーへの割り当てでは「過去見た試合」バリデーションを適用しない
+      const hasSeenSameSchoolInPast = role === 'timekeeper' ? false : checkPastSchoolConflict(staff.id, match);
 
       const isTimeUnavailable = !!(
         staff.present_segment_ids &&
@@ -856,7 +857,8 @@ export default function ControlPage() {
         (negSchoolId && staff.interested_school_ids?.includes(negSchoolId))
       );
 
-      hasSeenSameSchoolInPast = checkPastSchoolConflict(staff.id, match);
+      // 司会タイマーへの割り当てでは「過去見た試合」バリデーションを適用しない
+      hasSeenSameSchoolInPast = role === 'timekeeper' ? false : checkPastSchoolConflict(staff.id, match);
 
       const isTimeUnavailable = !!(
         staff.present_segment_ids &&
