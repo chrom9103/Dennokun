@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useParams } from "next/navigation";
 import Icon from "./ui/Icon";
+import { getEventById } from "@/lib/eventApi";
 
 /* ──────────────────────────────────────────────
  * Navigation types
@@ -158,6 +159,39 @@ export default function Sidebar({
   const params = useParams();
   const eventId = params?.id as string | undefined;
 
+  const [eventName, setEventName] = useState<string | null>(null);
+  const [isLoadingEvent, setIsLoadingEvent] = useState(false);
+
+  useEffect(() => {
+    if (!eventId) {
+      setEventName(null);
+      setIsLoadingEvent(false);
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoadingEvent(true);
+
+    getEventById(Number(eventId))
+      .then((event) => {
+        if (isMounted) {
+          setEventName(event.name);
+          setIsLoadingEvent(false);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to fetch event details:", err);
+        if (isMounted) {
+          setEventName(`大会 ID: ${eventId}`);
+          setIsLoadingEvent(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [eventId]);
+
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     マスタデータ管理: true,
     試合管理: true,
@@ -187,20 +221,18 @@ export default function Sidebar({
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-2">
         {navItems.map((item) => {
-          if (item.children) {
-            return (
-              <SidebarItem
-                key={item.title}
-                item={item}
-                active={isParentActive(item.path)}
-                currentPath={pathname}
-                open={openSections[item.title]}
-                onToggle={() => toggleSection(item.title)}
-                onClose={onMobileClose}
-              />
-            );
-          }
-          return (
+          const itemKey = item.path || item.title;
+          const renderedItem = item.children ? (
+            <SidebarItem
+              key={item.title}
+              item={item}
+              active={isParentActive(item.path)}
+              currentPath={pathname}
+              open={openSections[item.title]}
+              onToggle={() => toggleSection(item.title)}
+              onClose={onMobileClose}
+            />
+          ) : (
             <SidebarItem
               key={item.path}
               item={item}
@@ -209,6 +241,40 @@ export default function Sidebar({
               onClose={onMobileClose}
             />
           );
+
+          if (item.title === "ダッシュボード" && eventId) {
+            return (
+              <div key={itemKey} className="flex flex-col">
+                {renderedItem}
+                {/* 大会名表示 */}
+                {isLoadingEvent ? (
+                  <div className="px-5 py-3 mx-4 my-2 rounded-xl bg-slate-50 border border-slate-100 flex items-center gap-2.5 animate-pulse">
+                    <div className="w-6 h-6 rounded-lg bg-slate-200 shrink-0" />
+                    <div className="flex flex-col gap-1 w-full">
+                      <div className="w-12 h-2 bg-slate-200 rounded" />
+                      <div className="w-24 h-3 bg-slate-200 rounded" />
+                    </div>
+                  </div>
+                ) : (
+                  eventName && (
+                    <div className="px-5 py-3 mx-4 my-2 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100/50 flex items-center gap-2.5 shadow-sm">
+                      <div className="p-1 rounded-lg bg-blue-500/10 text-blue-600 shrink-0">
+                        <Icon name="emoji_events" size={16} />
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-[9px] uppercase tracking-wider text-blue-500 font-bold font-mono">Current Event</span>
+                        <span className="text-xs font-semibold text-slate-700 truncate" title={eventName}>
+                          {eventName}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                )}
+              </div>
+            );
+          }
+
+          return renderedItem;
         })}
       </nav>
 

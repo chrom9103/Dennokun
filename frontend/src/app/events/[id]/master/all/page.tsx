@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useParams } from "next/navigation";
+import JSZip from "jszip";
 import Icon from "@/components/ui/Icon";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -79,6 +80,179 @@ export default function AllDataManagementPage() {
   // UI States
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [downloadingZip, setDownloadingZip] = useState(false);
+
+  const handleDownloadImportZip = async () => {
+    if (!eventId) return;
+
+    try {
+      setDownloadingZip(true);
+
+      const [
+        sectionData,
+        roomData,
+        segmentData,
+        schoolData,
+        groupData,
+        teamData,
+        staffData,
+      ] = await Promise.all([
+        fetchSections(eventId),
+        fetchRooms(eventId),
+        fetchTimetableSegments(eventId),
+        fetchSchools(eventId),
+        fetchTeamGroups(eventId),
+        fetchTeams(eventId),
+        fetchStaffs(eventId),
+      ]);
+
+      const zip = new JSZip();
+
+      // 1. division.csv
+      const divisionHeaders = ["orderNumber", "name"];
+      const divisionRows = sectionData.map((s) => [
+        s.order_number ?? "",
+        s.name,
+      ]);
+      const divisionCsv = [
+        divisionHeaders.map(escapeCSVValue).join(","),
+        ...divisionRows.map((r) => r.map(escapeCSVValue).join(",")),
+      ].join("\n");
+      zip.file("division.csv", "\uFEFF" + divisionCsv);
+
+      // 2. rooms.csv
+      const roomHeaders = ["orderNumber", "name", "note"];
+      const roomRows = roomData.map((r) => [
+        r.order_number ?? "",
+        r.name,
+        r.note ?? "",
+      ]);
+      const roomCsv = [
+        roomHeaders.map(escapeCSVValue).join(","),
+        ...roomRows.map((r) => r.map(escapeCSVValue).join(",")),
+      ].join("\n");
+      zip.file("rooms.csv", "\uFEFF" + roomCsv);
+
+      // 3. timetable.csv
+      const timetableHeaders = [
+        "orderNumber",
+        "name",
+        "note",
+        "timeDisplay",
+        "isPreRound",
+        "nameAliases",
+      ];
+      const timetableRows = segmentData.map((s) => {
+        let timeDisplay = "";
+        if (s.start_time && s.end_time) {
+          timeDisplay = `${s.start_time}-${s.end_time}`;
+        } else if (s.start_time || s.end_time) {
+          timeDisplay = s.start_time || s.end_time || "";
+        }
+
+        return [
+          s.order_number ?? "",
+          s.name,
+          "",
+          timeDisplay,
+          s.is_pre_round ? "1" : "0",
+          s.name_aliases?.join("|") ?? "",
+        ];
+      });
+      const timetableCsv = [
+        timetableHeaders.map(escapeCSVValue).join(","),
+        ...timetableRows.map((r) => r.map(escapeCSVValue).join(",")),
+      ].join("\n");
+      zip.file("timetable.csv", "\uFEFF" + timetableCsv);
+
+      // 4. schools.csv
+      const schoolHeaders = ["orderNumber", "name", "nameAliases", "note"];
+      const schoolRows = schoolData.map((s) => [
+        s.order_number ?? "",
+        s.name,
+        s.name_aliases?.join("|") ?? "",
+        s.note ?? "",
+      ]);
+      const schoolCsv = [
+        schoolHeaders.map(escapeCSVValue).join(","),
+        ...schoolRows.map((r) => r.map(escapeCSVValue).join(",")),
+      ].join("\n");
+      zip.file("schools.csv", "\uFEFF" + schoolCsv);
+
+      // 5. teams.csv
+      const teamHeaders = [
+        "orderOfApplication",
+        "name",
+        "schoolName",
+        "section",
+        "isSeed",
+        "note",
+        "groupName",
+      ];
+      const teamRows = teamData.map((t) => [
+        t.order_of_application ?? "",
+        t.name,
+        t.school_name ?? "",
+        t.section_name ?? "",
+        t.is_seed ? "1" : "0",
+        t.note ?? "",
+        t.group_name ?? "",
+      ]);
+      const teamCsv = [
+        teamHeaders.map(escapeCSVValue).join(","),
+        ...teamRows.map((r) => r.map(escapeCSVValue).join(",")),
+      ].join("\n");
+      zip.file("teams.csv", "\uFEFF" + teamCsv);
+
+      // 6. staffs.csv
+      const staffHeaders = [
+        "orderOfApplication",
+        "name",
+        "note",
+        "canBeMainJudge",
+        "canBeSubJudge",
+        "canBeTimekeeper",
+        "interestedSchoolNameList",
+        "presentTimetableSegmentNameList",
+      ];
+      const staffRows = staffData.map((st) => {
+        const segNames = (st.present_segment_ids || [])
+          .map((id) => segmentData.find((seg) => seg.id === id)?.name)
+          .filter(Boolean);
+
+        return [
+          st.order_of_application ?? "",
+          st.name,
+          st.note ?? "",
+          st.can_be_main_judge ? "1" : "0",
+          st.can_be_sub_judge ? "1" : "0",
+          st.can_be_timekeeper ? "1" : "0",
+          st.interested_school_names?.join(",") ?? "",
+          segNames.join(","),
+        ];
+      });
+      const staffCsv = [
+        staffHeaders.map(escapeCSVValue).join(","),
+        ...staffRows.map((r) => r.map(escapeCSVValue).join(",")),
+      ].join("\n");
+      zip.file("staffs.csv", "\uFEFF" + staffCsv);
+
+      const content = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `import_data_event${eventId}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      alert(e instanceof Error ? e.message : "ZIPの生成・ダウンロードに失敗しました");
+    } finally {
+      setDownloadingZip(false);
+    }
+  };
 
   const segmentDayGroups = useMemo(() => {
     const map = new Map<number, number>();
@@ -301,15 +475,26 @@ export default function AllDataManagementPage() {
               </p>
             </div>
           </div>
-          <a
-            href="/dennokun_csv_sample.xlsx"
-            download="dennokun_csv_sample.xlsx"
-            className="shrink-0"
-          >
-            <Button variant="primary" icon="download" className="bg-blue-600 hover:bg-blue-700 text-white shadow-md transition-all">
-              サンプル Excel のダウンロード
+          <div className="flex flex-col gap-2 shrink-0 w-full md:w-auto">
+            <a
+              href="/dennokun_csv_sample.xlsx"
+              download="dennokun_csv_sample.xlsx"
+              className="w-full"
+            >
+              <Button variant="primary" icon="download" className="w-full bg-blue-600 hover:bg-blue-700 text-white shadow-md transition-all">
+                サンプル Excel のダウンロード
+              </Button>
+            </a>
+            <Button
+              variant="outlined"
+              icon="folder_zip"
+              onClick={handleDownloadImportZip}
+              disabled={downloadingZip}
+              className="w-full bg-white hover:bg-blue-50 text-blue-700 border-blue-300 shadow-sm transition-all"
+            >
+              {downloadingZip ? "生成中..." : "インポート用データをダウンロード (.zip)"}
             </Button>
-          </a>
+          </div>
         </CardContent>
       </Card>
 
