@@ -76,54 +76,54 @@ async def delete_all_matches(event_id: int) -> int:
         await conn.close()
 
 
+
+# 「引数未渡し」と「明示的な null」を区別するセンチネル
+_UNSET = object()
+
+
 async def update_match_assignment(
     match_id: int,
-    event_timetable_segment_id: Optional[int] = None,
-    event_room_id: Optional[int] = None,
-    aff_team_id: Optional[int] = None,
-    neg_team_id: Optional[int] = None,
-    main_judge_staff_id: Optional[int] = None,
-    sub_judge1_staff_id: Optional[int] = None,
-    sub_judge2_staff_id: Optional[int] = None,
-    sub_judge3_staff_id: Optional[int] = None,
-    sub_judge4_staff_id: Optional[int] = None,
-    timekeeper_staff_id: Optional[int] = None,
-    event_section_id: Optional[int] = None,
-    order_number_in_segment: Optional[int] = None,
-    is_staffs_fixed: Optional[bool] = None,
+    event_timetable_segment_id=_UNSET,
+    event_room_id=_UNSET,
+    aff_team_id=_UNSET,
+    neg_team_id=_UNSET,
+    main_judge_staff_id=_UNSET,
+    sub_judge1_staff_id=_UNSET,
+    sub_judge2_staff_id=_UNSET,
+    sub_judge3_staff_id=_UNSET,
+    sub_judge4_staff_id=_UNSET,
+    timekeeper_staff_id=_UNSET,
+    event_section_id=_UNSET,
+    order_number_in_segment=_UNSET,
+    is_staffs_fixed=_UNSET,
 ) -> Optional[dict]:
-    """試合の割当情報（チーム・会場・時間枠・ジャッジ・司会タイマー）を更新する。"""
+    """試合の割当情報（チーム・会場・時間枠・ジャッジ・司会タイマー）を更新する。
+    _UNSET（デフォルト）は「変更しない」を意味する。
+    None を明示的に渡した場合は「未割り当て（NULL）」としてDBに書き込む。
+    """
     from app.core.db import get_db_connection
     from app.core.handle_db.matches import get_match_by_id
     conn = await get_db_connection()
     try:
         fields = {}
-        if event_timetable_segment_id is not None:
-            fields["event_timetable_segment_id"] = event_timetable_segment_id
-        if event_room_id is not None:
-            fields["event_room_id"] = event_room_id
-        if aff_team_id is not None:
-            fields["aff_team_id"] = aff_team_id
-        if neg_team_id is not None:
-            fields["neg_team_id"] = neg_team_id
-        if main_judge_staff_id is not None:
-            fields["main_judge_staff_id"] = main_judge_staff_id
-        if sub_judge1_staff_id is not None:
-            fields["sub_judge1_staff_id"] = sub_judge1_staff_id
-        if sub_judge2_staff_id is not None:
-            fields["sub_judge2_staff_id"] = sub_judge2_staff_id
-        if sub_judge3_staff_id is not None:
-            fields["sub_judge3_staff_id"] = sub_judge3_staff_id
-        if sub_judge4_staff_id is not None:
-            fields["sub_judge4_staff_id"] = sub_judge4_staff_id
-        if timekeeper_staff_id is not None:
-            fields["timekeeper_staff_id"] = timekeeper_staff_id
-        if event_section_id is not None:
-            fields["event_section_id"] = event_section_id
-        if order_number_in_segment is not None:
-            fields["order_number_in_segment"] = order_number_in_segment
-        if is_staffs_fixed is not None:
-            fields["is_staffs_fixed"] = is_staffs_fixed
+        local_vars = {
+            "event_timetable_segment_id": event_timetable_segment_id,
+            "event_room_id": event_room_id,
+            "aff_team_id": aff_team_id,
+            "neg_team_id": neg_team_id,
+            "main_judge_staff_id": main_judge_staff_id,
+            "sub_judge1_staff_id": sub_judge1_staff_id,
+            "sub_judge2_staff_id": sub_judge2_staff_id,
+            "sub_judge3_staff_id": sub_judge3_staff_id,
+            "sub_judge4_staff_id": sub_judge4_staff_id,
+            "timekeeper_staff_id": timekeeper_staff_id,
+            "event_section_id": event_section_id,
+            "order_number_in_segment": order_number_in_segment,
+            "is_staffs_fixed": is_staffs_fixed,
+        }
+        for col, val in local_vars.items():
+            if val is not _UNSET:
+                fields[col] = val
 
         if not fields:
             return await get_match_by_id(match_id)
@@ -137,6 +137,8 @@ async def update_match_assignment(
         return await get_match_by_id(match_id)
     finally:
         await conn.close()
+
+
 
 
 async def bulk_update_match_judges(match_dicts: List[dict]) -> None:

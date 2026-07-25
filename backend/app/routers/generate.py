@@ -181,7 +181,10 @@ async def update_match_assignment(event_id: int, match_id: int, data: MatchAssig
                 raise HTTPException(status_code=404, detail="Match not found")
             return match
         else:
-            match = await _update(match_id=match_id, **data.dict(exclude_none=True))
+            # model_fields_set を使って「明示的に送信されたフィールドのみ」を抽出する。
+            # exclude_none=True を使うと null（未割り当て）が除外されてしまうためNGとなる。
+            explicit_fields = {k: v for k, v in data.dict().items() if k in data.model_fields_set}
+            match = await _update(match_id=match_id, **explicit_fields)
             if not match or match["event_id"] != event_id:
                 raise HTTPException(status_code=404, detail="Match not found")
             return match
