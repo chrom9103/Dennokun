@@ -422,14 +422,14 @@ export default function FinalResultsPage() {
   // CSV エクスポート
   const handleCSVExport = () => {
     const rows = [
-      ["部門", "順位（確定）", "チーム名", "学校", "勝", "負", "コミュ合計"],
+      ["部門", "順位（確定）", "チーム名", "学校", "勝", "得票数", "コミュ合計"],
       ...standings.map((s) => [
         s.section_name ?? "全体",
         getEffectiveRank(s),
         s.team_name,
         s.school_name ?? "",
         s.wins,
-        s.losses,
+        s.total_votes,
         s.total_comm,
       ]),
     ];
@@ -602,7 +602,7 @@ export default function FinalResultsPage() {
                               <th className="text-left px-4 py-3">チーム名</th>
                               <th className="text-left px-4 py-3">学校</th>
                               <th className="text-center px-4 py-3">勝</th>
-                              <th className="text-center px-4 py-3">負</th>
+                              <th className="text-center px-4 py-3">得票数</th>
                               <th className="text-center px-4 py-3">コミュ合計</th>
                             </tr>
                           </thead>
@@ -616,7 +616,7 @@ export default function FinalResultsPage() {
                                   <Badge variant="success" className="text-xs">{s.wins}</Badge>
                                 </td>
                                 <td className="text-center px-4 py-3">
-                                  <Badge variant="destructive" className="text-xs">{s.losses}</Badge>
+                                  <Badge variant="info" className="text-xs">{s.total_votes}</Badge>
                                 </td>
                                 <td className="text-center px-4 py-3 font-bold text-primary">{s.total_comm}</td>
                               </tr>
