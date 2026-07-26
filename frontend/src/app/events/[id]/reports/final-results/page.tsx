@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
@@ -218,12 +218,12 @@ export default function FinalResultsPage() {
   const [schoolCount, setSchoolCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  // 表示タブ: standings | export | tournament
-  const [activeTab, setActiveTab] = useState<"standings" | "export" | "tournament">("standings");
+  // 表示タブ: standings | pre-export | main-export | tournament
+  const [activeTab, setActiveTab] = useState<"standings" | "pre-export" | "main-export" | "tournament">("standings");
 
-  // エクスポート中状態
-  const [exporting, setExporting] = useState(false);
-  const exportRef = useRef<HTMLDivElement>(null);
+  // エクスポート中状態（予選・本選で独立）
+  const [exportingPre, setExportingPre] = useState(false);
+  const [exportingMain, setExportingMain] = useState(false);
 
   const load = useCallback(async () => {
     if (!eventId) return;
@@ -362,9 +362,14 @@ export default function FinalResultsPage() {
     }, 40000);
   }
 
-  // エクスポート処理
-  async function handleExport(format: "png" | "jpeg" | "pdf") {
-    const root = document.getElementById("match-result-export-root");
+  // エクスポート処理（rootId: キャプチャ対象の要素ID, filePrefix: ファイル名プレフィックス）
+  async function handleExport(
+    rootId: string,
+    filePrefix: string,
+    format: "png" | "jpeg" | "pdf",
+    setExporting: (v: boolean) => void
+  ) {
+    const root = document.getElementById(rootId);
     if (!root) return;
     setExporting(true);
     try {
@@ -395,11 +400,10 @@ export default function FinalResultsPage() {
         });
         pdf.addImage(imgData, "JPEG", 0, 0, targetWidth, targetHeight);
         const blob = pdf.output("blob");
-        downloadBlob(blob, `match-results-${eventId}.pdf`);
+        downloadBlob(blob, `${filePrefix}-${eventId}.pdf`);
       } else {
         const mimeType = format === "jpeg" ? "image/jpeg" : "image/png";
-        const ext = format;
-        const filename = `match-results-${eventId}.${ext}`;
+        const filename = `${filePrefix}-${eventId}.${format}`;
         await new Promise<void>((resolve, reject) => {
           canvas.toBlob(
             (blob) => {
@@ -550,7 +554,8 @@ export default function FinalResultsPage() {
         <div className="flex gap-1 p-1 bg-muted/30 rounded-xl w-fit border border-border">
           {([
             { key: "standings", label: "予選順位", icon: "bar_chart" },
-            { key: "export", label: "試合結果出力", icon: "picture_as_pdf" },
+            { key: "pre-export", label: "予選結果出力", icon: "picture_as_pdf" },
+            { key: "main-export", label: "本選結果出力", icon: "picture_as_pdf" },
             { key: "tournament", label: "決勝トーナメント", icon: "account_tree" },
           ] as const).map(({ key, label, icon }) => (
             <button
@@ -632,12 +637,12 @@ export default function FinalResultsPage() {
           </div>
         )}
 
-        {/* Tab: 試合結果出力 */}
-        {activeTab === "export" && (
+        {/* Tab: 予選結果出力 */}
+        {activeTab === "pre-export" && (
           <div className="space-y-4">
             <div className="flex items-center gap-3 flex-wrap">
               <p className="text-sm text-muted-foreground flex-1">
-                以下のプレビューを PNG / JPEG / PDF 形式でダウンロードできます。
+                予選の試合結果プレビューです。PNG / JPEG / PDF 形式でダウンロードできます。
               </p>
               <div className="flex gap-2 flex-wrap">
                 {(["png", "jpeg", "pdf"] as const).map((fmt) => (
@@ -645,8 +650,8 @@ export default function FinalResultsPage() {
                     key={fmt}
                     variant="outlined"
                     size="sm"
-                    loading={exporting}
-                    onClick={() => handleExport(fmt)}
+                    loading={exportingPre}
+                    onClick={() => handleExport("match-result-pre-round", "pre-results", fmt, setExportingPre)}
                     icon={fmt === "pdf" ? "picture_as_pdf" : "image"}
                   >
                     {fmt.toUpperCase()} で保存
@@ -654,14 +659,49 @@ export default function FinalResultsPage() {
                 ))}
               </div>
             </div>
-
-            {/* Export Preview */}
             <div className="border border-border rounded-xl overflow-auto bg-gray-50 p-4">
               <MatchResultExport
                 matches={allMatches}
                 segments={segments}
                 sections={sections}
                 rooms={[]}
+                roundType="pre"
+                rootId="match-result-pre-round"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Tab: 本選結果出力 */}
+        {activeTab === "main-export" && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              <p className="text-sm text-muted-foreground flex-1">
+                本選の試合結果プレビューです。PNG / JPEG / PDF 形式でダウンロードできます。
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                {(["png", "jpeg", "pdf"] as const).map((fmt) => (
+                  <Button
+                    key={fmt}
+                    variant="outlined"
+                    size="sm"
+                    loading={exportingMain}
+                    onClick={() => handleExport("match-result-main-round", "main-results", fmt, setExportingMain)}
+                    icon={fmt === "pdf" ? "picture_as_pdf" : "image"}
+                  >
+                    {fmt.toUpperCase()} で保存
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="border border-border rounded-xl overflow-auto bg-gray-50 p-4">
+              <MatchResultExport
+                matches={allMatches}
+                segments={segments}
+                sections={sections}
+                rooms={[]}
+                roundType="main"
+                rootId="match-result-main-round"
               />
             </div>
           </div>
