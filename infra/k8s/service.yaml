@@ -28,11 +28,11 @@ spec:
 
 ---
 
-# DNS alias service for frontend Next.js upstream 'backend'
+# DNS alias service for frontend Next.js upstream 'dennokun-backend'
 apiVersion: v1
 kind: Service
 metadata:
-  name: backend
+  name: dennokun-backend-service
 spec:
   selector:
     app: dennokun-backend
