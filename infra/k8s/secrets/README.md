@@ -90,7 +90,7 @@ kubectl apply -k .
 ./deploy.sh
 ```
 
-> `deploy.sh` は Secret をいったん削除してから作り直します。そのため、数秒間は nginx のデフォルト証明書が返ります。
+> 証明書の内容が変わると、kustomize が新しい名前の Secret を作成し、Ingress の参照先も自動で切り替えます。旧 Secret を事前に削除する必要はありません。
 
 ### 5. 配信されている証明書を確認
 
@@ -105,9 +105,10 @@ echo | openssl s_client -connect 127.0.0.1:443 -servername dennokun.chrom.jp 2>/
 
 ### 6. 後片付け（任意）
 
-`deploy.sh` を使わずに `kubectl apply -k` で反映した場合、旧 Secret が残ります。
+反映後も旧 Secret はクラスタに残ります。Ingress から参照されていないことを確認してから削除してください。
 
 ```bash
+kubectl get ingress dennokun-ingress -o jsonpath='{.spec.tls[0].secretName}'   # 使用中の Secret
 kubectl get secret | grep dennokun-secret
 kubectl delete secret dennokun-secret-<旧ハッシュ>
 ```
