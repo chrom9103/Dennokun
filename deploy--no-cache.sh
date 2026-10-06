@@ -6,8 +6,8 @@
 #
 # 必要ファイル:
 #   - infra/k8s/secrets/dennokun-app-secret.yaml (環境変数設定)
-#   - infra/k8s/secrets/tls.crt (SSL証明書)
-#   - infra/k8s/secrets/tls.key (SSL秘密鍵)
+#
+# TLS 証明書（Secret: dennokun-chrom-jp-tls）は cert-manager が自動で発行・更新します（chrom9103/k8s-certs）。
 
 set -e
 
@@ -38,21 +38,14 @@ NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-"https://dennokun.chrom.jp"}
 # 設定ファイルの存在を確認
 echo ""
 echo "Checking required configuration files..."
-if [ ! -f infra/k8s/secrets/tls.crt ] || [ ! -f infra/k8s/secrets/tls.key ]; then
-  echo "❌ Error: infra/k8s/secrets/tls.crt or infra/k8s/secrets/tls.key not found"
+# TLS 証明書の Secret を確認（cert-manager が自動で発行・更新する。chrom9103/k8s-certs を参照）
+TLS_SECRET=$(grep -m1 -E '^[[:space:]]*secretName:' infra/k8s/ingress.yaml | awk '{print $2}')
+if ! microk8s kubectl get secret "$TLS_SECRET" > /dev/null 2>&1; then
+  echo "❌ Error: TLS Secret $TLS_SECRET not found"
+  echo "  Apply the cert-manager manifests first: kubectl apply -k ~/develops/certs"
   exit 1
 fi
-
-# tls.crt がフルチェーン（サーバー証明書＋中間CA）を含んでいるか確認
-CERT_COUNT=$(grep -c "BEGIN CERTIFICATE" infra/k8s/secrets/tls.crt 2>/dev/null || echo 0)
-if [ "$CERT_COUNT" -lt 2 ]; then
-  echo "❌ Error: infra/k8s/secrets/tls.crt contains only $CERT_COUNT certificate(s)."
-  echo "  tls.crt must be a full-chain certificate (server cert + intermediate CA certs)."
-  echo "  Example (Let's Encrypt):"
-  echo "    cat your-cert.pem intermediate.pem > infra/k8s/secrets/tls.crt"
-  exit 1
-fi
-echo "  ✓ tls.crt contains $CERT_COUNT certificates (full chain)"
+echo "  ✓ TLS Secret $TLS_SECRET found"
 
 if [ ! -f infra/k8s/secrets/dennokun-app-secret.yaml ]; then
   echo "❌ Error: infra/k8s/secrets/dennokun-app-secret.yaml not found"
@@ -99,8 +92,6 @@ echo "  - Loading backend image..."
 docker save dennokun-backend:$VERSION dennokun-backend:latest | microk8s ctr images import -
 
 # 4. マニフェストを検証（クラスタを変更する前に kustomize / API のエラーを検出）
-#    TLS Secret は kustomize の secretGenerator が証明書の内容に応じたハッシュ付きの名前で作成し、
-#    Ingress の参照先も自動で切り替わるため、事前に削除する必要はない
 echo ""
 echo "[4/6] Validating Kubernetes manifests (server-side dry-run)..."
 microk8s kubectl apply -k infra/k8s/ --dry-run=server > /dev/null
@@ -132,8 +123,7 @@ echo ""
 echo "Verifying TLS Secret..."
 TLS_SECRET=$(microk8s kubectl get ingress dennokun-ingress -o jsonpath='{.spec.tls[0].secretName}' 2>/dev/null || echo "")
 if [ -z "$TLS_SECRET" ]; then
-  echo "⚠ Warning: TLS Secret dennokun-secret-* not found. Checking infra/k8s/secrets files..."
-  ls -lh infra/k8s/secrets/tls.*
+  echo "⚠ Warning: TLS Secret for dennokun-ingress not found"
 else
   echo "✓ TLS Secret verified: $TLS_SECRET"
   CERT_SUBJECT=$(microk8s kubectl get secret "$TLS_SECRET" -o jsonpath='{.data.tls\.crt}' 2>/dev/null | base64 -d | openssl x509 -noout -subject -enddate 2>/dev/null || echo "N/A")
