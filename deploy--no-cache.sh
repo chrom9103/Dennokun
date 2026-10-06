@@ -98,18 +98,13 @@ docker save dennokun-frontend:$VERSION dennokun-frontend:latest | microk8s ctr i
 echo "  - Loading backend image..."
 docker save dennokun-backend:$VERSION dennokun-backend:latest | microk8s ctr images import -
 
-# 4. TLS Secret を確認・再作成
+# 4. マニフェストを検証（クラスタを変更する前に kustomize / API のエラーを検出）
+#    TLS Secret は kustomize の secretGenerator が証明書の内容に応じたハッシュ付きの名前で作成し、
+#    Ingress の参照先も自動で切り替わるため、事前に削除する必要はない
 echo ""
-echo "[4/6] Ensuring TLS Secret is properly configured..."
-
-# 既存の Secret を削除（古いハッシュ付きの Secret も削除）
-echo "  - Cleaning up old TLS Secrets..."
-microk8s kubectl get secrets -o name 2>/dev/null | grep "secret/dennokun-secret" | xargs microk8s kubectl delete 2>/dev/null || true
-
-# Secret が確実に削除されるまで待つ
-sleep 2
-
-echo "  ✓ TLS Secret cleanup complete"
+echo "[4/6] Validating Kubernetes manifests (server-side dry-run)..."
+microk8s kubectl apply -k infra/k8s/ --dry-run=server > /dev/null
+echo "  ✓ Manifests are valid"
 
 # 5. Kubernetes にデプロイ
 echo ""
@@ -124,10 +119,6 @@ for deployment in dennokun-backend-deployment dennokun-frontend-deployment; do
   microk8s kubectl rollout restart deployment/$deployment
 done
 
-# Ingress コントローラーを再起動して新しい Secret をロード
-echo "  - Restarting Ingress controller..."
-microk8s kubectl rollout restart deployment -n ingress -l app.kubernetes.io/name=nginx-ingress 2>/dev/null || true
-
 echo ""
 echo "Waiting for rollouts to complete..."
 for deployment in dennokun-backend-deployment dennokun-frontend-deployment; do
@@ -139,15 +130,14 @@ done
 # TLS Secret が正しく作成されたか確認
 echo ""
 echo "Verifying TLS Secret..."
-sleep 3
-TLS_SECRET=$(microk8s kubectl get secrets -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | tr ' ' '\n' | grep '^dennokun-secret' | head -n 1 || echo "")
+TLS_SECRET=$(microk8s kubectl get ingress dennokun-ingress -o jsonpath='{.spec.tls[0].secretName}' 2>/dev/null || echo "")
 if [ -z "$TLS_SECRET" ]; then
   echo "⚠ Warning: TLS Secret dennokun-secret-* not found. Checking infra/k8s/secrets files..."
   ls -lh infra/k8s/secrets/tls.*
 else
   echo "✓ TLS Secret verified: $TLS_SECRET"
-  CERT_SUBJECT=$(microk8s kubectl get secret "$TLS_SECRET" -o jsonpath='{.data.tls\.crt}' 2>/dev/null | base64 -d | openssl x509 -noout -subject 2>/dev/null || echo "N/A")
-  echo "  Certificate Subject: $CERT_SUBJECT"
+  CERT_SUBJECT=$(microk8s kubectl get secret "$TLS_SECRET" -o jsonpath='{.data.tls\.crt}' 2>/dev/null | base64 -d | openssl x509 -noout -subject -enddate 2>/dev/null || echo "N/A")
+  echo "  Certificate: $CERT_SUBJECT"
 fi
 
 echo ""
